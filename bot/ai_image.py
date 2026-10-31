@@ -65,6 +65,9 @@ async def generate(api_key: str, model: str, photo: bytes, style: str, mime: str
         code = err.get("code")
         if code in (401, 403):
             raise AiImageError("Gemini API kaliti noto'g'ri yoki bu model uchun ruxsat yo'q.")
+        if code == 402:
+            raise AiImageError("Gemini loyihasida oldindan to'langan balans tugagan. AI Studio → Projects → Billing "
+                               "bo'limida balansni to'ldiring (ai.studio/projects).")
         if code == 429 and "free_tier" in str(err.get("message", "")):
             raise AiImageError("API kalit bepul (Free Tier) loyihaga tegishli — rasm modeli uchun bepul limit yo'q. "
                                "Google AI Studio'da shu loyihaga billing (Cloud kreditlari) ulang.")

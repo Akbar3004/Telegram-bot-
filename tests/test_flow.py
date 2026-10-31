@@ -451,6 +451,13 @@ async def test_ai_image_parses_gemini_response(monkeypatch):
     with pytest.raises(ai_image.AiImageError, match="Free Tier"):
         await ai_image.generate("k", "m", b"x", "studio")
 
+    async def no_prepay(url, body, key):
+        return {"error": {"code": 402, "message": "Your prepayment credits are depleted.", "status": "RESOURCE_EXHAUSTED"}}
+
+    monkeypatch.setattr(ai_image, "post_json", no_prepay)
+    with pytest.raises(ai_image.AiImageError, match="balans"):
+        await ai_image.generate("k", "m", b"x", "studio")
+
     async def blocked(url, body, key):
         return {"promptFeedback": {"blockReason": "SAFETY"}}
 
