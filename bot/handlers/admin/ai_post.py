@@ -18,8 +18,8 @@ CAPTION_LIMIT = 1024  # Telegram rasm izohi chegarasi
 
 NO_KEY = (
     "🎨 <b>AI post hali sozlanmagan.</b>\n\n"
-    "Vercel'da <code>GEMINI_API_KEY</code> o'zgaruvchisini qo'shing (Google AI Studio → Get API key), "
-    "so'ng Redeploy qiling."
+    "Vercel'da <code>OPENAI_API_KEY</code> (ChatGPT, platform.openai.com → API keys) yoki "
+    "<code>GEMINI_API_KEY</code> (Google AI Studio → Get API key) o'zgaruvchisini qo'shing, so'ng Redeploy qiling."
 )
 SEND_PHOTO = (
     "🎨 <b>AI post</b>\n\n"
@@ -53,7 +53,7 @@ def result_kb(posted: bool = False) -> InlineKeyboardMarkup:
 async def start(state: FSMContext) -> tuple[str, InlineKeyboardMarkup]:
     """AI post'ni boshlaydi: rasm kutish holatiga o'tadi."""
     await state.clear()
-    if not get_settings().gemini_api_key:
+    if not ai_image.pick_provider(get_settings()):
         return NO_KEY, home_kb()
     await state.set_state(AiStates.photo)
     return SEND_PHOTO, home_kb()
@@ -67,7 +67,7 @@ async def cb_ai(call: CallbackQuery, state: FSMContext) -> None:
 # Rasm: AI post bosqichida yoki admin hech qanday dialogsiz shunchaki rasm yuborsa
 @router.message(StateFilter(AiStates.photo, None), F.photo | F.document.mime_type.startswith("image/"))
 async def got_photo(message: Message, state: FSMContext) -> None:
-    if not get_settings().gemini_api_key:
+    if not ai_image.pick_provider(get_settings()):
         await message.answer(NO_KEY, reply_markup=home_kb())
         return
     if message.photo:
@@ -136,13 +136,13 @@ async def run_generation(bot: Bot, chat_id: int, state: FSMContext) -> None:
         await bot.send_message(chat_id, "Ma'lumot eskirgan. Rasmni qaytadan yuboring.", reply_markup=home_kb())
         return
     settings = get_settings()
-    progress = await bot.send_message(chat_id, f"⏳ AI rasm tayyorlamoqda ({ai_image.STYLES[style][0]})... "
-                                               "Bu 10-40 soniya davom etadi.")
+    name = ai_image.PROVIDERS.get(ai_image.pick_provider(settings), "AI")
+    progress = await bot.send_message(chat_id, f"⏳ {name} rasm tayyorlamoqda ({ai_image.STYLES[style][0]})... "
+                                               "Bu 10-50 soniya davom etadi.")
     await bot.send_chat_action(chat_id, ChatAction.UPLOAD_PHOTO)
     try:
         photo = (await bot.download(data["ai_src"])).read()
-        result = await ai_image.generate(settings.gemini_api_key, settings.gemini_image_model, photo, style,
-                                         data.get("ai_mime") or "image/jpeg")
+        result = await ai_image.generate_with(settings, photo, style, data.get("ai_mime") or "image/jpeg")
     except ai_image.AiImageError as e:
         await bot.edit_message_text(f"❌ {e}", chat_id=chat_id, message_id=progress.message_id, reply_markup=error_kb())
         return

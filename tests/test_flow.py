@@ -382,13 +382,13 @@ async def test_ai_post_flow(env, monkeypatch):
     get_settings.cache_clear()
     calls = []
 
-    async def fake_generate(api_key, model, photo, style, mime="image/jpeg"):
-        calls.append((api_key, style, mime))
+    async def fake_generate(settings, photo, style, mime="image/jpeg"):
+        calls.append((settings.gemini_api_key, style, mime))
         if style == "flatlay":
             raise ai_image.AiImageError("Limit tugagan")
         return b"PNGDATA"
 
-    monkeypatch.setattr(ai_image, "generate", fake_generate)
+    monkeypatch.setattr(ai_image, "generate_with", fake_generate)
     await env.bind()
     await env.private(ADMIN, "/start")
     await env.private(ADMIN, "🎨 AI post")
@@ -464,6 +464,43 @@ async def test_ai_image_parses_gemini_response(monkeypatch):
     monkeypatch.setattr(ai_image, "post_json", blocked)
     with pytest.raises(ai_image.AiImageError, match="SAFETY"):
         await ai_image.generate("k", "m", b"x", "studio")
+
+
+async def test_openai_image_parses_response_and_errors(monkeypatch):
+    import base64
+    seen = {}
+
+    async def ok(form, key):
+        fields = {f[0]["name"]: f[2] for f in form._fields}
+        seen.update(fields, key=key)
+        return {"data": [{"b64_json": base64.b64encode(b"OPENAI").decode()}]}
+
+    monkeypatch.setattr(ai_image, "post_openai", ok)
+    assert await ai_image.openai_generate("sk", "gpt-image-2", b"jpg", "studio") == b"OPENAI"
+    assert seen["model"] == "gpt-image-2" and seen["key"] == "sk" and seen["image"] == b"jpg"
+    assert "EXACTLY" in seen["prompt"]
+
+    for err, expected in (
+        ({"code": "insufficient_quota", "message": "You exceeded your current quota"}, "balans"),
+        ({"code": None, "type": "invalid_request_error",
+          "message": "Your organization must be verified to use the model `gpt-image-2`."}, "tasdiqlash"),
+        ({"code": "invalid_api_key", "message": "Incorrect API key provided"}, "noto'g'ri"),
+        ({"code": "moderation_blocked", "message": "Your request was rejected by the safety system"}, "xavfsizlik"),
+    ):
+        async def fail(form, key, err=err):
+            return {"error": err}
+
+        monkeypatch.setattr(ai_image, "post_openai", fail)
+        with pytest.raises(ai_image.AiImageError, match=expected):
+            await ai_image.openai_generate("sk", "gpt-image-2", b"jpg", "studio")
+
+
+def test_pick_provider():
+    from types import SimpleNamespace as NS
+    assert ai_image.pick_provider(NS(openai_api_key=None, gemini_api_key=None, ai_provider=None)) is None
+    assert ai_image.pick_provider(NS(openai_api_key="sk", gemini_api_key="g", ai_provider=None)) == "openai"
+    assert ai_image.pick_provider(NS(openai_api_key="sk", gemini_api_key="g", ai_provider="gemini")) == "gemini"
+    assert ai_image.pick_provider(NS(openai_api_key=None, gemini_api_key="g", ai_provider="openai")) == "gemini"
 
 
 async def test_profile_buttons_and_privacy_fallback(env):

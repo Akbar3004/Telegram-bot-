@@ -50,11 +50,15 @@ va adminga reyting, g'oliblarga mukofot xabarini yuborish hamda g'oliblar tarixi
 
 **🎨 AI post** (admin `/start` bosganda yozish maydoni ostida "🏆 Konkurs" va "🎨 AI post" tugmalari doim turadi)
 - Kiyim rasmini botga yuborasiz va uslubni tanlaysiz: studiya fon, maneken, model kiygan yoki chiroyli
-  muhit. Keyin izoh yozasiz (nomi, narxi) yoki "Izohsiz" ni bosasiz. Gemini kiyimni o'zgartirmasdan
+  muhit. Keyin izoh yozasiz (nomi, narxi) yoki "Izohsiz" ni bosasiz. ChatGPT yoki Gemini kiyimni o'zgartirmasdan
   chiroyli mahsulot rasmini yaratadi.
 - Natija ostida "✅ Guruhga joylash", "🔄 Qayta yaratish" va "🎨 Boshqa uslub" tugmalari bor. Har bir
   rasm joylanishidan oldin sizga ko'rsatiladi.
-- Sozlash: [Google AI Studio](https://aistudio.google.com) → Get API key, so'ng Vercel'da
+- **ChatGPT** bilan: [platform.openai.com](https://platform.openai.com/api-keys) da API kalit yarating va
+  Billing bo'limida balansni to'ldiring (ChatGPT Plus obunasi API'ni qoplamaydi). So'ng Vercel'da
+  `OPENAI_API_KEY` ni qo'shib, Redeploy qiling. Model: `OPENAI_IMAGE_MODEL` (standart: `gpt-image-2`).
+  OpenAI rasm modellari uchun tashkilotni tasdiqlash (Settings → Organization → Verify) talab qilinishi mumkin.
+- **Gemini** bilan: [Google AI Studio](https://aistudio.google.com) → Get API key, so'ng Vercel'da
   `GEMINI_API_KEY` ni qo'shib, Redeploy qiling. Rasm API'si pullik (bir rasm taxminan $0.04).
   Google AI Pro obunasidagi oylik Cloud kreditlarini Developer Program orqali shu loyihaning billing
   hisobiga ulash mumkin. Model `GEMINI_IMAGE_MODEL` bilan almashtiriladi
@@ -99,7 +103,8 @@ Supabase yoki boshqa PostgreSQL ham ishlaydi.
 | `ADMIN_IDS` | Adminlar ID'si, vergul bilan: `111111111,222222222` |
 | `WEBHOOK_SECRET` | 16+ belgili tasodifiy kalit (A-Z, a-z, 0-9, `_`, `-`) |
 | `DATABASE_URL` | 3-qadamdagi baza havolasi |
-| `GEMINI_API_KEY` | (ixtiyoriy) AI post uchun Gemini API kaliti |
+| `OPENAI_API_KEY` | (ixtiyoriy) AI post uchun ChatGPT (OpenAI) API kaliti |
+| `GEMINI_API_KEY` | (ixtiyoriy) AI post uchun Gemini API kaliti. Ikkalasi bo'lsa — ChatGPT ishlatiladi (`AI_PROVIDER` bilan o'zgartiriladi) |
 | `GROUP_ID` | (ixtiyoriy) guruh ID'si, bo'sh qoldirsangiz guruhda `/bind` yozasiz |
 
 `WEBHOOK_SECRET` yaratish:
