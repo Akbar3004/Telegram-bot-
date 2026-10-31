@@ -123,7 +123,7 @@ async def openai_generate(api_key: str, model: str, photo: bytes, style: str, mi
         code, msg = err.get("code") or err.get("type"), str(err.get("message", ""))
         if code in ("invalid_api_key",) or "Incorrect API key" in msg:
             raise AiImageError("OpenAI API kaliti noto'g'ri.")
-        if code in ("insufficient_quota", "billing_hard_limit_reached"):
+        if code in ("insufficient_quota", "billing_hard_limit_reached", "billing_not_active") or "credits" in msg.lower():
             raise AiImageError("OpenAI hisobida balans tugagan. platform.openai.com → Billing bo'limida balansni to'ldiring.")
         if "verif" in msg.lower():
             raise AiImageError("OpenAI bu rasm modeli uchun tashkilotni tasdiqlashni so'rayapti: platform.openai.com → "

@@ -483,6 +483,8 @@ async def test_openai_image_parses_response_and_errors(monkeypatch):
     for err, expected in (
         ({"code": "insufficient_quota", "message": "You exceeded your current quota"}, "balans"),
         ({"code": None, "type": "invalid_request_error",
+          "message": "You have no credits remaining. Add credits to continue using the API"}, "balans"),
+        ({"code": None, "type": "invalid_request_error",
           "message": "Your organization must be verified to use the model `gpt-image-2`."}, "tasdiqlash"),
         ({"code": "invalid_api_key", "message": "Incorrect API key provided"}, "noto'g'ri"),
         ({"code": "moderation_blocked", "message": "Your request was rejected by the safety system"}, "xavfsizlik"),
