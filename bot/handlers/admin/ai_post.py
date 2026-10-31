@@ -50,13 +50,18 @@ def result_kb(posted: bool = False) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-@router.callback_query(Menu.filter(F.action == "ai"))
-async def cb_ai(call: CallbackQuery, state: FSMContext) -> None:
+async def start(state: FSMContext) -> tuple[str, InlineKeyboardMarkup]:
+    """AI post'ni boshlaydi: rasm kutish holatiga o'tadi."""
     await state.clear()
     if not get_settings().gemini_api_key:
-        return await edit(call, NO_KEY, home_kb())
+        return NO_KEY, home_kb()
     await state.set_state(AiStates.photo)
-    await edit(call, SEND_PHOTO, home_kb())
+    return SEND_PHOTO, home_kb()
+
+
+@router.callback_query(Menu.filter(F.action == "ai"))
+async def cb_ai(call: CallbackQuery, state: FSMContext) -> None:
+    await edit(call, *await start(state))
 
 
 # Rasm: AI post bosqichida yoki admin hech qanday dialogsiz shunchaki rasm yuborsa

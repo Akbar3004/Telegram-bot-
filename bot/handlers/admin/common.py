@@ -2,7 +2,7 @@ import html
 
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters.callback_data import CallbackData
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -112,19 +112,15 @@ def short_name(row: repo.RatingRow, limit: int = 22) -> str:
     return name if len(name) <= limit else name[: limit - 1] + "…"
 
 
-def home_menu() -> tuple[str, InlineKeyboardMarkup]:
-    """Admin /start bosganda: qaysi bo'lim kerakligini tanlaydi."""
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [btn("🏆 Konkurs", Menu(action="main"))],
-        [btn("🎨 AI post", Menu(action="ai"))],
-    ])
-    text = (
-        "👋 <b>Bosh menyu</b>\n\n"
-        "🏆 <b>Konkurs</b> — reyting, konkurs sharti, g'oliblar va mukofotlar.\n"
-        "🎨 <b>AI post</b> — kiyim rasmini yuborasiz, AI uni chiroyli mahsulot rasmiga aylantiradi "
-        "va guruhga joylaysiz."
-    )
-    return text, kb
+# Admin uchun yozish maydoni ostida doim turadigan ikkita tugma
+BTN_CONTEST = "🏆 Konkurs"
+BTN_AI = "🎨 AI post"
+ADMIN_KB = ReplyKeyboardMarkup(
+    keyboard=[[KeyboardButton(text=BTN_CONTEST), KeyboardButton(text=BTN_AI)]],
+    resize_keyboard=True,
+    is_persistent=True,
+)
+HOME_TEXT = "👇 Pastdagi tugmalardan birini tanlang: <b>🏆 Konkurs</b> yoki <b>🎨 AI post</b>."
 
 
 async def main_menu(session: AsyncSession) -> tuple[str, InlineKeyboardMarkup]:

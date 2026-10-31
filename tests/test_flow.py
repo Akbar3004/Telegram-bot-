@@ -164,10 +164,11 @@ async def test_full_flow(env):
     # "Kim kimni qo'shdi" xizmat xabarlari o'chirildi
     assert len(fake.sent(DeleteMessage)) >= 5
 
-    # Admin /start — bosh menyu (Konkurs / AI post), Konkurs bo'limida reyting darhol ko'rinadi
+    # Admin /start — yozish maydoni ostida "Konkurs" va "AI post" tugmalari; Konkurs'da reyting darhol ko'rinadi
     await env.private(ADMIN, "/start")
-    assert "Bosh menyu" in last_text(fake)
-    await env.click(Menu(action="main"))
+    kb = fake.sent(SendMessage, chat_id=ADMIN)[-1].reply_markup
+    assert [b.text for b in kb.keyboard[0]] == ["🏆 Konkurs", "🎨 AI post"] and kb.is_persistent
+    await env.private(ADMIN, "🏆 Konkurs")
     text = last_text(fake)
     assert "Admin panel" in text and "User10</a> — <b>2</b> ta" in text and "User20</a> — <b>1</b> ta" in text
 
@@ -361,8 +362,18 @@ async def test_contest_rules_winners_and_group_board(env):
 
 async def test_ai_post_without_key(env):
     await env.private(ADMIN, "/start")
-    await env.click(Menu(action="ai"))
+    await env.private(ADMIN, "🎨 AI post")
     assert "GEMINI_API_KEY" in last_text(env.fake)
+
+
+async def test_admin_buttons_work_inside_dialog(env):
+    """Pastdagi tugma dialog o'rtasida bosilsa ham ishlaydi — matn foydalanuvchiga yuborilib ketmaydi."""
+    await env.bind()
+    await env.add(10, 100)
+    await env.private(ADMIN, "/start")
+    await env.click(UserCb(action="write", uid=10))
+    await env.private(ADMIN, "🏆 Konkurs")
+    assert not env.fake.sent(CopyMessage) and "Admin panel" in last_text(env.fake)
 
 
 async def test_ai_post_flow(env, monkeypatch):
@@ -380,7 +391,7 @@ async def test_ai_post_flow(env, monkeypatch):
     monkeypatch.setattr(ai_image, "generate", fake_generate)
     await env.bind()
     await env.private(ADMIN, "/start")
-    await env.click(Menu(action="ai"))
+    await env.private(ADMIN, "🎨 AI post")
     assert "Kiyim rasmini yuboring" in last_text(env.fake)
 
     # Rasm yuboriladi -> uslub -> izoh -> AI rasm qaytadi

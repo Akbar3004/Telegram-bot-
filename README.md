@@ -48,7 +48,7 @@ va adminga reyting, g'oliblarga mukofot xabarini yuborish hamda g'oliblar tarixi
 - **G'oliblar tarixi:** har bir turda kim, nechanchi o'rin bilan va **nechanchi marta** g'olib bo'lgani.
 - **Excel (CSV)** eksport.
 
-**🎨 AI post** (admin `/start` bosganda bosh menyuda "🏆 Konkurs" va "🎨 AI post" tugmalari chiqadi)
+**🎨 AI post** (admin `/start` bosganda yozish maydoni ostida "🏆 Konkurs" va "🎨 AI post" tugmalari doim turadi)
 - Kiyim rasmini botga yuborasiz va uslubni tanlaysiz: studiya fon, maneken, model kiygan yoki chiroyli
   muhit. Keyin izoh yozasiz (nomi, narxi) yoki "Izohsiz" ni bosasiz. Gemini kiyimni o'zgartirmasdan
   chiroyli mahsulot rasmini yaratadi.
