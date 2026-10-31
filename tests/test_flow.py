@@ -5,19 +5,20 @@ import pytest
 from aiogram import Bot, Dispatcher
 from aiogram.client.session.base import BaseSession
 from aiogram.methods import (
-    CreateChatInviteLink, GetMe,
+    CreateChatInviteLink, GetFile, GetMe,
     CopyMessage, DeleteMessage, EditMessageText,
-    GetChatMember, SendDocument, SendMessage, TelegramMethod,
+    GetChatMember, SendDocument, SendMessage, SendPhoto, TelegramMethod,
 )
 from aiogram.types import (
     CallbackQuery, Chat, ChatInviteLink, ChatMemberAdministrator, ChatMemberLeft, ChatMemberMember, ChatMemberUpdated,
-    Message, MessageId, Update, User,
+    File, Message, MessageId, PhotoSize, Update, User,
 )
 
+from bot import ai_image
 from bot.db import repo
 from bot.db.fsm_storage import DbStorage
 from bot.handlers import setup_routers
-from bot.handlers.admin.common import Menu, PrizeCb, RatingPage, UserCb
+from bot.handlers.admin.common import AiCb, Menu, PrizeCb, RatingPage, UserCb
 from bot.middlewares import DbSessionMiddleware
 
 ADMIN = 1
@@ -36,6 +37,7 @@ class FakeSession(BaseSession):
         self.blocked: set[int] = set()
         self.privacy_restricted: set[int] = set()  # tg://user?id= tugmasini rad etadigan foydalanuvchilar
         self.links = 0
+        self.photos = 0
 
     async def make_request(self, bot, method, timeout=None):
         self.calls.append(method)
@@ -59,6 +61,12 @@ class FakeSession(BaseSession):
             return ChatMemberAdministrator.model_construct(user=user(42), status="administrator", can_delete_messages=True)
         if isinstance(method, CopyMessage):
             return MessageId(message_id=1)
+        if isinstance(method, GetFile):
+            return File(file_id=method.file_id, file_unique_id="u", file_path="photos/x.jpg")
+        if isinstance(method, SendPhoto):
+            self.photos += 1
+            return Message(message_id=1, date=NOW, chat=Chat(id=method.chat_id, type="private"), caption=method.caption,
+                           photo=[PhotoSize(file_id=f"RESULT{self.photos}", file_unique_id="u", width=1, height=1)])
         if isinstance(method, (SendMessage, SendDocument, EditMessageText)):
             return Message(message_id=1, date=NOW, chat=Chat(id=getattr(method, "chat_id", 0) or 0, type="private"),
                            text=getattr(method, "text", None))
@@ -156,8 +164,10 @@ async def test_full_flow(env):
     # "Kim kimni qo'shdi" xizmat xabarlari o'chirildi
     assert len(fake.sent(DeleteMessage)) >= 5
 
-    # Admin /start — reyting darhol ko'rinadi
+    # Admin /start — bosh menyu (Konkurs / AI post), Konkurs bo'limida reyting darhol ko'rinadi
     await env.private(ADMIN, "/start")
+    assert "Bosh menyu" in last_text(fake)
+    await env.click(Menu(action="main"))
     text = last_text(fake)
     assert "Admin panel" in text and "User10</a> — <b>2</b> ta" in text and "User20</a> — <b>1</b> ta" in text
 
@@ -347,6 +357,87 @@ async def test_contest_rules_winners_and_group_board(env):
     assert "User30 — <b>1</b> ta" in board.text and "User30 — <b>1</b> ta 🏆" not in board.text
     assert "Muddatgacha chiqib ketganlar: <b>1</b>" in board.text and "Hisob = qo'shgan odamlari" in board.text
     assert "tg://user" not in board.text and board.reply_markup is not None
+
+
+async def test_ai_post_without_key(env):
+    await env.private(ADMIN, "/start")
+    await env.click(Menu(action="ai"))
+    assert "GEMINI_API_KEY" in last_text(env.fake)
+
+
+async def test_ai_post_flow(env, monkeypatch):
+    from bot.config import get_settings
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    get_settings.cache_clear()
+    calls = []
+
+    async def fake_generate(api_key, model, photo, style, mime="image/jpeg"):
+        calls.append((api_key, style, mime))
+        if style == "flatlay":
+            raise ai_image.AiImageError("Limit tugagan")
+        return b"PNGDATA"
+
+    monkeypatch.setattr(ai_image, "generate", fake_generate)
+    await env.bind()
+    await env.private(ADMIN, "/start")
+    await env.click(Menu(action="ai"))
+    assert "Kiyim rasmini yuboring" in last_text(env.fake)
+
+    # Rasm yuboriladi -> uslub -> izoh -> AI rasm qaytadi
+    await env.feed(message=Message(message_id=7, date=NOW, chat=Chat(id=ADMIN, type="private"), from_user=user(ADMIN),
+                                   photo=[PhotoSize(file_id="SRC", file_unique_id="s", width=10, height=10)]))
+    assert "Qaysi uslubda" in last_text(env.fake)
+    await env.click(AiCb(action="style", style="studio"))
+    assert "izoh yozing" in last_text(env.fake)
+    await env.private(ADMIN, "Ko'ylak, 250 000 so'm")
+    photo = env.fake.sent(SendPhoto, chat_id=ADMIN)[-1]
+    assert photo.caption == "Ko'ylak, 250 000 so'm" and calls == [("test-key", "studio", "image/jpeg")]
+    buttons = [b.text for row in photo.reply_markup.inline_keyboard for b in row]
+    assert "✅ Guruhga joylash" in buttons and "🔄 Qayta yaratish" in buttons
+
+    # Guruhga joylash — AI natijasi izoh bilan guruhga chiqadi
+    await env.click(AiCb(action="post"))
+    posted = env.fake.sent(SendPhoto, chat_id=GROUP.id)[-1]
+    assert posted.photo == "RESULT1"
+
+    # Boshqa uslubda AI xato bersa — tushunarli xabar va qayta urinish tugmasi
+    await env.click(AiCb(action="style", style="flatlay"))
+    err = env.fake.sent(EditMessageText)[-1]
+    assert "Limit tugagan" in err.text and "Qayta urinish" in str(err.reply_markup)
+
+    # Admin dialogsiz shunchaki rasm yuborsa ham AI post boshlanadi
+    await env.click(Menu(action="home"))
+    await env.feed(message=Message(message_id=8, date=NOW, chat=Chat(id=ADMIN, type="private"), from_user=user(ADMIN),
+                                   photo=[PhotoSize(file_id="SRC2", file_unique_id="s2", width=10, height=10)]))
+    assert "Qaysi uslubda" in last_text(env.fake)
+    get_settings.cache_clear()
+
+
+async def test_ai_image_parses_gemini_response(monkeypatch):
+    import base64
+
+    async def ok(url, body, key):
+        assert "gemini-2.5-flash-image:generateContent" in url and key == "k"
+        assert body["contents"][0]["parts"][1]["inline_data"]["mime_type"] == "image/jpeg"
+        return {"candidates": [{"content": {"parts": [{"text": "ok"}, {"inlineData": {
+            "mimeType": "image/png", "data": base64.b64encode(b"IMG").decode()}}]}}]}
+
+    monkeypatch.setattr(ai_image, "post_json", ok)
+    assert await ai_image.generate("k", "gemini-2.5-flash-image", b"x", "model") == b"IMG"
+
+    async def limit(url, body, key):
+        return {"error": {"code": 429, "message": "Resource exhausted"}}
+
+    monkeypatch.setattr(ai_image, "post_json", limit)
+    with pytest.raises(ai_image.AiImageError, match="Limit"):
+        await ai_image.generate("k", "m", b"x", "studio")
+
+    async def blocked(url, body, key):
+        return {"promptFeedback": {"blockReason": "SAFETY"}}
+
+    monkeypatch.setattr(ai_image, "post_json", blocked)
+    with pytest.raises(ai_image.AiImageError, match="SAFETY"):
+        await ai_image.generate("k", "m", b"x", "studio")
 
 
 async def test_profile_buttons_and_privacy_fallback(env):

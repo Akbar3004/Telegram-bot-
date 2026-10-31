@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///data/bot.db"
     # Webhook (Vercel) rejimi uchun maxfiy kalit: Telegram so'rovlarini tekshirish va /api/setup ni himoyalash
     webhook_secret: str | None = None
+    # AI post: Google AI Studio'dan olingan Gemini API kaliti va rasm modeli
+    gemini_api_key: str | None = None
+    gemini_image_model: str = "gemini-2.5-flash-image"
 
     @field_validator("webhook_secret", mode="before")
     @classmethod

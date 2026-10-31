@@ -73,7 +73,7 @@ async def test_webhook_processes_update(fake_runtime):
                                   {"X-Telegram-Bot-Api-Secret-Token": SECRET})
     assert (status, body) == (200, {"ok": True})
     # ADMIN_IDS=1 — admin panel javobi yuborildi
-    assert any("Guruh ulanmagan" in (getattr(c, "text", "") or "") for c in fake_runtime.calls)
+    assert any("Bosh menyu" in (getattr(c, "text", "") or "") for c in fake_runtime.calls)
 
 
 async def test_route_param_from_vercel_rewrite(fake_runtime):

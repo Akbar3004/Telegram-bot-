@@ -36,6 +36,11 @@ class PrizeCb(CallbackData, prefix="p"):
     value: int = 0
 
 
+class AiCb(CallbackData, prefix="ai"):
+    action: str
+    style: str = ""
+
+
 def btn(text: str, cb: CallbackData | str) -> InlineKeyboardButton:
     return InlineKeyboardButton(text=text, callback_data=cb if isinstance(cb, str) else cb.pack())
 
@@ -107,10 +112,26 @@ def short_name(row: repo.RatingRow, limit: int = 22) -> str:
     return name if len(name) <= limit else name[: limit - 1] + "…"
 
 
+def home_menu() -> tuple[str, InlineKeyboardMarkup]:
+    """Admin /start bosganda: qaysi bo'lim kerakligini tanlaydi."""
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [btn("🏆 Konkurs", Menu(action="main"))],
+        [btn("🎨 AI post", Menu(action="ai"))],
+    ])
+    text = (
+        "👋 <b>Bosh menyu</b>\n\n"
+        "🏆 <b>Konkurs</b> — reyting, konkurs sharti, g'oliblar va mukofotlar.\n"
+        "🎨 <b>AI post</b> — kiyim rasmini yuborasiz, AI uni chiroyli mahsulot rasmiga aylantiradi "
+        "va guruhga joylaysiz."
+    )
+    return text, kb
+
+
 async def main_menu(session: AsyncSession) -> tuple[str, InlineKeyboardMarkup]:
     gid = await group_id(session)
     if gid is None:
-        return NO_GROUP, InlineKeyboardMarkup(inline_keyboard=[[btn("🔄 Tekshirish", Menu(action="main"))]])
+        return NO_GROUP, InlineKeyboardMarkup(inline_keyboard=[[btn("🔄 Tekshirish", Menu(action="main"))],
+                                                               [btn("🏠 Bosh menyu", Menu(action="home"))]])
     rnd = await repo.current_round(session, gid)
     rows = await repo.round_rating(session, rnd)
     total = sum(r.count for r in rows)
@@ -133,6 +154,7 @@ async def main_menu(session: AsyncSession) -> tuple[str, InlineKeyboardMarkup]:
     kb.row(btn("📝 Shablonlar", TplCb(action="list")), btn("🏆 G'oliblar tarixi", Menu(action="history")))
     kb.row(btn("🔄 Yangi tur", Menu(action="newround")), btn("⚙️ Sozlamalar", Menu(action="settings")))
     kb.row(btn("📥 Excel (CSV)", Menu(action="export")), btn("♻️ Yangilash", Menu(action="main")))
+    kb.row(btn("🏠 Bosh menyu", Menu(action="home")))
     return "\n".join(lines), kb.as_markup()
 
 

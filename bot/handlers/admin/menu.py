@@ -13,7 +13,7 @@ from ...db import repo
 from ...db.models import Win
 from ...utils import full_name, mention
 from .common import (
-    NO_GROUP, PAGE_SIZE, Menu, RatingPage, UserCb, back_kb, btn, edit, group_id, main_menu,
+    NO_GROUP, PAGE_SIZE, Menu, RatingPage, UserCb, back_kb, btn, edit, group_id, home_menu, main_menu,
     profile_button, rating_line, short_name, user_card,
 )
 
@@ -25,8 +25,14 @@ router = Router(name="admin_menu")
 async def cmd_start(message: Message, session: AsyncSession, state: FSMContext) -> None:
     await state.clear()
     await repo.upsert_user(session, message.from_user, started=True)
-    text, kb = await main_menu(session)
+    text, kb = home_menu()
     await message.answer(text, reply_markup=kb)
+
+
+@router.callback_query(Menu.filter(F.action == "home"))
+async def cb_home(call: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    await edit(call, *home_menu())
 
 
 @router.callback_query(Menu.filter(F.action == "main"))
