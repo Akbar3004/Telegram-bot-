@@ -443,6 +443,14 @@ async def test_ai_image_parses_gemini_response(monkeypatch):
     with pytest.raises(ai_image.AiImageError, match="Limit"):
         await ai_image.generate("k", "m", b"x", "studio")
 
+    async def free_tier(url, body, key):
+        return {"error": {"code": 429, "message": "Quota exceeded for metric: "
+                          "generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0"}}
+
+    monkeypatch.setattr(ai_image, "post_json", free_tier)
+    with pytest.raises(ai_image.AiImageError, match="Free Tier"):
+        await ai_image.generate("k", "m", b"x", "studio")
+
     async def blocked(url, body, key):
         return {"promptFeedback": {"blockReason": "SAFETY"}}
 
