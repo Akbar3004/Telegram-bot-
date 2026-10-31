@@ -175,7 +175,7 @@ async def test_full_flow(env):
 
     # Foydalanuvchilar botga start bosadi; 20 esa keyin bloklaydi
     await env.private(10, "/start")
-    assert "Qo'shgan odamlaringiz: <b>2</b>" in last_text(fake)
+    assert "Hisobingiz: <b>2</b>" in last_text(fake)
     fake.blocked.add(20)
 
     # Mukofot: shablon -> TOP-3 -> tasdiqlash -> yuborish
@@ -271,11 +271,82 @@ async def test_top_command_in_group(env):
     await env.group_cmd(20, "/top")
     msg = env.fake.sent(SendMessage, chat_id=GROUP.id)[-1]
     assert "TOP-10" in msg.text and "User10 — <b>2</b> ta" in msg.text and "tg://user" not in msg.text
-    assert msg.reply_markup.inline_keyboard[0][0].url == "https://t.me/konkurs_bot?start=link"
+    urls = [row[0].url for row in msg.reply_markup.inline_keyboard]
+    assert urls == ["https://t.me/konkurs_bot?start=me", "https://t.me/konkurs_bot?start=link"]
     # Cooldown: darhol qayta /top — yangi xabar chiqmaydi, lekin buyruq o'chiriladi
     before = len(env.fake.sent(SendMessage, chat_id=GROUP.id))
     await env.group_cmd(20, "/top")
     assert len(env.fake.sent(SendMessage, chat_id=GROUP.id)) == before
+
+
+async def test_user_result_button(env):
+    await env.bind()
+    await env.add(10, 100)
+    await env.add(10, 101)
+    await env.leave(101)
+    await env.private(10, "/start")
+    greeting, stats = env.fake.sent(SendMessage, chat_id=10)[-2:]
+    # Pastda doim turadigan "📊 Natijam" tugmasi
+    assert greeting.reply_markup.keyboard[0][0].text == "📊 Natijam" and greeting.reply_markup.is_persistent
+    assert "Hisobingiz: <b>1</b> ta" in stats.text and "Qo'shganlaringiz: 2 ta, shundan guruhni tark etgan: 1 ta" in stats.text
+
+    before = len(env.fake.sent(SendMessage, chat_id=10))
+    await env.private(10, "📊 Natijam")
+    assert len(env.fake.sent(SendMessage, chat_id=10)) == before + 1
+    assert "Sizning natijangiz" in last_text(env.fake)
+    await env.private(10, "🔗 Taklif havolam")
+    assert "shaxsiy taklif havolangiz" in last_text(env.fake)
+
+
+async def test_contest_rules_winners_and_group_board(env):
+    await env.bind()
+    for m in range(100, 105):
+        await env.add(10, m)
+    for m in range(200, 203):
+        await env.add(20, m)
+    await env.add(30, 300)
+    await env.leave(104)
+
+    # Muddat va "kamida 3 ta" sharti
+    await env.private(ADMIN, "/start")
+    await env.click(Menu(action="rules"))
+    await env.click(Menu(action="rule.deadline"))
+    await env.private(ADMIN, "ertaga")
+    assert "tushunmadim" in last_text(env.fake)
+    await env.private(ADMIN, "05.11.2099 18:00")
+    assert "Muddat saqlandi" in last_text(env.fake) and "05.11.2099 18:00" in last_text(env.fake)
+    await env.click(Menu(action="rule.goal"))
+    await env.private(ADMIN, "3")
+    assert "kamida <b>3 ta</b>" in last_text(env.fake)
+
+    # Foydalanuvchi shartni va qancha qolganini ko'radi
+    await env.private(30, "📊 Natijam")
+    assert "kamida <b>3 ta</b>" in last_text(env.fake) and "yana <b>2 ta</b> qoldi" in last_text(env.fake)
+
+    await env.click(Menu(action="winners"))
+    text = last_text(env.fake)
+    assert "User10" in text and "User20" in text and "User30" not in text
+
+    # Shart bo'yicha g'oliblar mukofot oynasida oldindan belgilanadi
+    await env.click(PrizeCb(action="start"))
+    await env.click(PrizeCb(action="custom"))
+    await env.private(ADMIN, "Tabriklaymiz {name}!")
+    await env.click(PrizeCb(action="rule"))
+    await env.click(PrizeCb(action="next"))
+    confirm = last_text(env.fake)
+    assert "User10" in confirm and "User20" in confirm and "User30" not in confirm
+
+    # To'liq jadval guruhga: qo'shganlar, chiqib ketganlar va tushuntirish bilan
+    before = len(env.fake.sent(SendMessage, chat_id=GROUP.id))
+    await env.click(Menu(action="post"))
+    assert len(env.fake.sent(SendMessage, chat_id=GROUP.id)) == before  # avval tasdiqlash
+    await env.click(Menu(action="post_ok"))
+    board = env.fake.sent(SendMessage, chat_id=GROUP.id)[-1]
+    assert "To'liq reyting jadvali" in board.text
+    assert "User10 — <b>4</b> ta 🏆 <i>(5 qo'shgan, 1 chiqib ketgan)</i>" in board.text
+    assert "User30 — <b>1</b> ta" in board.text and "User30 — <b>1</b> ta 🏆" not in board.text
+    assert "Muddatgacha chiqib ketganlar: <b>1</b>" in board.text and "Hisob = qo'shgan odamlari" in board.text
+    assert "tg://user" not in board.text and board.reply_markup is not None
 
 
 async def test_profile_buttons_and_privacy_fallback(env):

@@ -44,7 +44,7 @@ async def cb_rating(call: CallbackQuery, callback_data: RatingPage, session: Asy
     if gid is None:
         return await edit(call, NO_GROUP, back_kb())
     rnd = await repo.current_round(session, gid)
-    rows = await repo.rating(session, rnd.id, await repo.get_flag(session, "subtract_left"))
+    rows = await repo.round_rating(session, rnd)
     pages = max(1, -(-len(rows) // PAGE_SIZE))
     page = min(max(callback_data.page, 0), pages - 1)
     chunk = rows[page * PAGE_SIZE:(page + 1) * PAGE_SIZE]
@@ -206,12 +206,14 @@ async def cb_export(call: CallbackQuery, session: AsyncSession) -> None:
     if gid is None:
         return await edit(call, NO_GROUP, back_kb())
     rnd = await repo.current_round(session, gid)
-    rows = await repo.rating(session, rnd.id, await repo.get_flag(session, "subtract_left"))
+    rows = await repo.round_rating(session, rnd)
+    winners = {r.user_id for r in repo.winners_by_rule(rnd, rows)}
     buf = io.StringIO()
     w = csv.writer(buf, delimiter=";")
-    w.writerow(["O'rin", "ID", "Ism", "Username", "Qo'shgan", "G'oliblik soni"])
+    w.writerow(["O'rin", "ID", "Ism", "Username", "Hisob", "Qo'shgan", "Chiqib ketgan", "Shart bo'yicha g'olib", "G'oliblik soni"])
     for r in rows:
-        w.writerow([r.place, r.user_id, full_name(r.user, r.user_id), r.user.username if r.user and r.user.username else "", r.count, r.wins])
+        w.writerow([r.place, r.user_id, full_name(r.user, r.user_id), r.user.username if r.user and r.user.username else "",
+                    r.count, r.added, r.left, "ha" if r.user_id in winners else "", r.wins])
     data = buf.getvalue().encode("utf-8-sig")  # Excel o'zbekcha harflarni to'g'ri ko'rsatishi uchun
     await call.message.answer_document(
         BufferedInputFile(data, filename=f"reyting_tur{rnd.number}.csv"),

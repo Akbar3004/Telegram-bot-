@@ -1,5 +1,4 @@
 """Guruhdagi hodisalar: kim kimni qo'shgani, chiqib ketganlar, xizmat xabarlarini o'chirish."""
-import html
 import logging
 import time
 
@@ -10,10 +9,10 @@ from aiogram.filters import JOIN_TRANSITION, LEAVE_TRANSITION, ChatMemberUpdated
 from aiogram.types import ChatMemberUpdated, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .. import board
 from ..config import get_settings
 from ..db import repo
 from ..filters import IsAdmin
-from ..utils import full_name, place_icon
 
 log = logging.getLogger(__name__)
 router = Router(name="group")
@@ -148,6 +147,15 @@ TOP_SIZE = 10
 TOP_COOLDOWN = 60  # soniya: guruhni /top bilan spam qilib bo'lmasin
 
 
+async def result_buttons(bot: Bot) -> InlineKeyboardMarkup:
+    """Guruhdagi reyting xabarlari ostidagi tugmalar: botda o'z natijasini va havolasini olish."""
+    me = await bot.me()
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📊 Natijamni ko'rish", url=f"https://t.me/{me.username}?start=me")],
+        [InlineKeyboardButton(text="🔗 Shaxsiy havolamni olish", url=f"https://t.me/{me.username}?start=link")],
+    ])
+
+
 @router.message(Command("top"))
 async def cmd_top(message: Message, bot: Bot, session: AsyncSession) -> None:
     if not await is_target_group(session, message.chat.id):
@@ -162,17 +170,14 @@ async def cmd_top(message: Message, bot: Bot, session: AsyncSession) -> None:
     await repo.set_setting(session, "last_top_at", str(now))
 
     rnd = await repo.current_round(session, message.chat.id)
-    rows = await repo.rating(session, rnd.id, await repo.get_flag(session, "subtract_left"))
-    lines = [f"🏆 <b>TOP-{TOP_SIZE} — eng ko'p odam qo'shganlar</b> (tur #{rnd.number})", ""]
-    # Ismlar havolasiz — guruhda hech kim bezovta qilinmaydi
-    lines += [f"{place_icon(r.place)} {html.escape(full_name(r.user, r.user_id))} — <b>{r.count}</b> ta" for r in rows[:TOP_SIZE]]
+    rows = await repo.round_rating(session, rnd)
+    ids = {r.user_id for r in repo.winners_by_rule(rnd, rows)}
+    lines = board.header(rnd, f"🏆 <b>TOP-{TOP_SIZE} — eng ko'p odam qo'shganlar</b>")
+    lines += [board.row_line(r, ids) for r in rows[:TOP_SIZE]]
     if not rows:
         lines.append("<i>Hozircha hech kim odam qo'shmagan. Birinchi bo'ling!</i>")
     lines.append("\n👇 O'z natijangiz va shaxsiy taklif havolangizni botdan oling")
-    me = await bot.me()
-    kb = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="🔗 Shaxsiy havolamni olish", url=f"https://t.me/{me.username}?start=link")
-    ]])
+    kb = await result_buttons(bot)
 
     # Eski /top xabarini o'chiramiz — guruhda faqat eng oxirgisi qoladi
     old = await repo.get_setting(session, "last_top_msg")

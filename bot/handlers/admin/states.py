@@ -13,3 +13,9 @@ class PrizeStates(StatesGroup):
 
 class WriteStates(StatesGroup):
     message = State()
+
+
+class RuleStates(StatesGroup):
+    deadline = State()
+    top = State()
+    goal = State()

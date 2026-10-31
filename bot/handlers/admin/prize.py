@@ -25,7 +25,12 @@ SELECT_LIMIT = 30
 async def current_rows(session: AsyncSession) -> tuple[int, list[repo.RatingRow]]:
     gid = await group_id(session)
     rnd = await repo.current_round(session, gid)
-    return rnd.id, await repo.rating(session, rnd.id, await repo.get_flag(session, "subtract_left"))
+    return rnd.id, await repo.round_rating(session, rnd)
+
+
+async def rule_winner_ids(session: AsyncSession) -> list[int]:
+    rnd = await repo.current_round(session, await group_id(session))
+    return [r.user_id for r in repo.winners_by_rule(rnd, await repo.round_rating(session, rnd))]
 
 
 # --- 1-qadam: shablon tanlash ----------------------------------------------
@@ -45,6 +50,14 @@ async def cb_start(call: CallbackQuery, session: AsyncSession, state: FSMContext
         return await edit(call, NO_GROUP, back_kb())
     await state.clear()
     await state.update_data(selected=[], mark_win=True, preselected=False)
+    await show_template_choice(call, session)
+
+
+@router.callback_query(PrizeCb.filter(F.action == "rule_start"))
+async def cb_rule_start(call: CallbackQuery, session: AsyncSession, state: FSMContext) -> None:
+    """Shart bo'yicha g'oliblar ekranidan: g'oliblar oldindan belgilangan holda mukofot yuborish."""
+    await state.clear()
+    await state.update_data(selected=await rule_winner_ids(session), mark_win=True, preselected=False)
     await show_template_choice(call, session)
 
 
@@ -108,6 +121,7 @@ async def select_view(session: AsyncSession, state: FSMContext) -> tuple[str, ob
         wins = f" 🏆{r.wins}" if r.wins else ""
         kb.row(btn(f"{mark} {r.place}. {short_name(r)} — {r.count}{wins}", PrizeCb(action="toggle", value=r.user_id)))
     kb.row(*(btn(f"TOP-{n}", PrizeCb(action="top", value=n)) for n in (1, 3, 5, 10)))
+    kb.row(btn("🎯 Shart bo'yicha g'oliblar", PrizeCb(action="rule")))
     kb.row(btn("🧹 Tozalash", PrizeCb(action="clear")),
            btn(("✅" if data.get("mark_win", True) else "❌") + " G'olib deb yozish", PrizeCb(action="mark")))
     kb.row(btn(f"➡️ Davom etish ({len(selected)} ta)", PrizeCb(action="next")))
@@ -123,7 +137,7 @@ async def select_view(session: AsyncSession, state: FSMContext) -> tuple[str, ob
     return text, kb.as_markup()
 
 
-@router.callback_query(PrizeCb.filter(F.action.in_({"toggle", "top", "clear", "mark"})))
+@router.callback_query(PrizeCb.filter(F.action.in_({"toggle", "top", "rule", "clear", "mark"})))
 async def cb_select(call: CallbackQuery, callback_data: PrizeCb, session: AsyncSession, state: FSMContext) -> None:
     data = await state.get_data()
     selected: list[int] = list(data.get("selected", []))
@@ -136,6 +150,10 @@ async def cb_select(call: CallbackQuery, callback_data: PrizeCb, session: AsyncS
     elif callback_data.action == "top":
         _, rows = await current_rows(session)
         selected = [r.user_id for r in rows[: callback_data.value]]
+    elif callback_data.action == "rule":
+        selected = await rule_winner_ids(session)
+        if not selected:
+            return await call.answer("Shart belgilanmagan yoki uni hali hech kim bajarmagan", show_alert=True)
     elif callback_data.action == "clear":
         selected = []
     else:

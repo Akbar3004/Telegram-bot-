@@ -16,7 +16,7 @@ va adminga reyting, g'oliblarga mukofot xabarini yuborish hamda g'oliblar tarixi
   Bu maxfiylik sozlamasi tufayli guruhga to'g'ridan-to'g'ri qo'shib bo'lmaydigan odamlar uchun kerak.
 - **`/top`** — guruhda hammaga TOP-10 reytingni ko'rsatadi. Bu buyruq daqiqada bir martadan ko'p
   ishlamaydi, eski `/top` xabari o'chiriladi. Ismlar havolasiz chiqadi, shuning uchun hech kimga
-  bildirishnoma bormaydi. Xabar ostida "🔗 Shaxsiy havolamni olish" tugmasi bor.
+  bildirishnoma bormaydi. Xabar ostida "📊 Natijamni ko'rish" va "🔗 Shaxsiy havolamni olish" tugmalari bor.
 - "Kim kimni qo'shdi" va "guruhdan chiqdi" degan xizmat xabarlarini o'chiradi.
 
 **Admin panel** (botga `/start` bosilganda)
@@ -33,11 +33,24 @@ va adminga reyting, g'oliblarga mukofot xabarini yuborish hamda g'oliblar tarixi
 - **Mukofot yuborish:** shablon tanlanadi, ro'yxatdan ✅ bilan belgilanadi yoki TOP-1/3/5/10
   tugmasi bosiladi, ko'rinishi tekshiriladi va bir tugma bilan yuboriladi. Yetib bormagan xabarlar
   uchun profilga havolalar beriladi, ularga o'zingiz yozasiz.
+- **Konkurs sharti** (🎯 tugmasi):
+  - **Muddat**, masalan `05.11.2026` yoki `05.11.2026 18:00` (Toshkent vaqti). Shu vaqtgacha
+    qo'shilganlar hisoblanadi. Muddatgacha guruhni tark etganlar ayiriladi, muddatdan keyin chiqqanlar
+    hisobda qoladi.
+  - **TOP-N** — muddatgacha eng ko'p qo'shgan N nafar g'olib bo'ladi, yoki **N ta qo'shish** —
+    kamida N ta qo'shgan har bir ishtirokchi g'olib bo'ladi.
+  - "👑 G'oliblar (shart)" — shartni bajarganlar ro'yxati. Mukofot oynasida "🎯 Shart bo'yicha
+    g'oliblar" tugmasi ularni bir bosishda belgilaydi.
+- **📢 Reytingni guruhga yuborish:** to'liq jadval (uzun bo'lsa, bir nechta xabarga bo'linadi). Har bir
+  ishtirokchining hisobi, qo'shganlari va muddatgacha guruhni tark etganlar soni, konkurs sharti,
+  shartni bajarganlar (🏆) va sonlar qanday hisoblangani tushuntiriladi.
 - **Turlar:** "Yangi tur" bosilganda reyting noldan boshlanadi, tarix esa saqlanib qoladi.
 - **G'oliblar tarixi:** har bir turda kim, nechanchi o'rin bilan va **nechanchi marta** g'olib bo'lgani.
 - **Excel (CSV)** eksport.
 
-**Oddiy foydalanuvchi** `/start` bosganda o'z natijasini, o'rnini va g'oliblik sonini ko'radi.
+**Oddiy foydalanuvchi** `/start` bosganda pastda doim turadigan **"📊 Natijam"** va
+**"🔗 Taklif havolam"** tugmalari chiqadi. Natijada hisobi, qo'shganlari va guruhni tark etganlar soni,
+o'rni, g'oliblik soni, konkurs sharti va shartgacha nechta qolgani ko'rinadi.
 
 > ⚠️ Telegram qoidasiga ko'ra bot faqat **botga /start bosgan** foydalanuvchiga xabar yubora oladi.
 > Shuning uchun guruhda ishtirokchilarga botga start bosishni aytib qo'ying.

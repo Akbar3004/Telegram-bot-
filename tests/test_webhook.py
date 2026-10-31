@@ -76,6 +76,14 @@ async def test_webhook_processes_update(fake_runtime):
     assert any("Guruh ulanmagan" in (getattr(c, "text", "") or "") for c in fake_runtime.calls)
 
 
+async def test_route_param_from_vercel_rewrite(fake_runtime):
+    """Vercel rewrite yo'lni /api/index ga almashtiradi — marshrut ?route= orqali keladi."""
+    status, _ = await call_app("POST", "/api/index", start_update(5), query="route=webhook")
+    assert status == 401
+    status, body = await call_app("GET", "/api/index", query="route=setup&secret=wrong")
+    assert (status, body["error"]) == (401, "secret noto'g'ri")
+
+
 async def test_webhook_survives_bad_json(fake_runtime):
     status, _ = await call_app("POST", "/api/webhook", b"{not json", {"X-Telegram-Bot-Api-Secret-Token": SECRET})
     assert status == 200  # Telegram qayta-qayta yubormasligi uchun

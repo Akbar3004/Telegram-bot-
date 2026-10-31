@@ -7,7 +7,10 @@ from aiogram import Bot, F, Router
 from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.filters import KICKED, MEMBER, ChatMemberUpdatedFilter, Command, CommandObject, CommandStart
-from aiogram.types import CallbackQuery, ChatMemberUpdated, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import (
+    CallbackQuery, ChatMemberUpdated, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, Message,
+    ReplyKeyboardMarkup,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import get_settings
@@ -23,6 +26,16 @@ USER_KB = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="🔄 Yangilash", callback_data="me")],
 ])
 
+# Pastda doim turadigan tugmalar — ko'pchilik "Menu" tugmasini topmaydi
+BTN_ME = "📊 Natijam"
+BTN_LINK = "🔗 Taklif havolam"
+MAIN_KB = ReplyKeyboardMarkup(
+    keyboard=[[KeyboardButton(text=BTN_ME), KeyboardButton(text=BTN_LINK)]],
+    resize_keyboard=True,
+    is_persistent=True,
+    input_field_placeholder="Natijangizni ko'rish uchun pastdagi tugmani bosing",
+)
+
 
 async def my_stats_text(session: AsyncSession, user_id: int) -> str:
     gid = await repo.get_group_id(session, get_settings().group_id)
@@ -31,15 +44,31 @@ async def my_stats_text(session: AsyncSession, user_id: int) -> str:
     st = await repo.user_stats(session, gid, user_id)
     rnd = await repo.current_round(session, gid)
     place = f"{st.place}-o'rin" if st.place else "hali reytingda yo'qsiz"
-    text = (
-        f"📊 <b>Sizning natijangiz</b> (tur #{rnd.number})\n\n"
-        f"👥 Qo'shgan odamlaringiz: <b>{st.round_count}</b> ta\n"
-        f"🏅 Reytingdagi o'rningiz: <b>{place}</b>\n"
-        f"🏆 G'olib bo'lganingiz: <b>{st.wins}</b> marta"
-    )
-    if st.left_count:
-        text += f"\n\nℹ️ Siz qo'shganlardan {st.left_count} tasi guruhdan chiqib ketgan."
-    return text + "\n\nGuruhga ko'proq do'stlaringizni qo'shing va g'olib bo'ling! 🚀"
+    lines = [f"📊 <b>Sizning natijangiz</b> (tur #{rnd.number})", ""]
+    rule = repo.rule_text(rnd)
+    if rule:
+        lines += [rule, ""]
+    lines.append(f"✅ Hisobingiz: <b>{st.round_count}</b> ta")
+    if st.round_left:
+        lines.append(f"   👥 Qo'shganlaringiz: {st.round_added} ta, shundan guruhni tark etgan: {st.round_left} ta")
+    lines += [
+        f"🏅 Reytingdagi o'rningiz: <b>{place}</b>",
+        f"🏆 G'olib bo'lganingiz: <b>{st.wins}</b> marta",
+    ]
+    if rnd.win_mode == "goal" and rnd.win_value:
+        need = rnd.win_value - st.round_count
+        lines.append("\n🎉 Siz shartni bajardingiz!" if need <= 0 else f"\n🎯 Shartni bajarishga yana <b>{need} ta</b> qoldi.")
+    elif rnd.win_mode == "top" and rnd.win_value:
+        inside = st.place is not None and st.place <= rnd.win_value
+        lines.append(f"\n🎉 Siz hozir TOP-{rnd.win_value} ichidasiz!" if inside
+                     else f"\n🎯 G'olib bo'lish uchun TOP-{rnd.win_value} ga kiring.")
+    if repo.is_finished(rnd):
+        lines.append("\n⏰ Konkurs muddati tugagan — natijalar e'lon qilinishini kuting.")
+    else:
+        lines.append("\nGuruhga ko'proq do'stlaringizni qo'shing va g'olib bo'ling! 🚀")
+    if st.round_left:
+        lines.append("<i>ℹ️ Guruhni tark etganlar hisobingizdan ayiriladi.</i>")
+    return "\n".join(lines)
 
 
 async def get_or_create_link(bot: Bot, session: AsyncSession, gid: int, user) -> str | None:
@@ -90,11 +119,21 @@ async def start(message: Message, command: CommandObject, bot: Bot, session: Asy
         return
     await message.answer(
         "Assalomu alaykum! 👋\nMen guruhga eng ko'p odam qo'shganlarni hisoblovchi botman. "
-        "Mukofotlar haqidagi xabarlar shu yerga keladi.\n\n" + await my_stats_text(session, message.from_user.id),
-        reply_markup=USER_KB,
+        "Mukofotlar haqidagi xabarlar shu yerga keladi.\n\n"
+        f"👇 Natijangizni istalgan vaqtda pastdagi <b>{BTN_ME}</b> tugmasi orqali ko'rasiz.",
+        reply_markup=MAIN_KB,
     )
+    await message.answer(await my_stats_text(session, message.from_user.id), reply_markup=USER_KB)
 
 
+@router.message(F.text == BTN_ME)
+@router.message(Command("natija"))
+async def btn_me(message: Message, session: AsyncSession) -> None:
+    await repo.upsert_user(session, message.from_user, started=True)
+    await message.answer(await my_stats_text(session, message.from_user.id), reply_markup=USER_KB)
+
+
+@router.message(F.text == BTN_LINK)
 @router.message(Command("link"))
 async def cmd_link(message: Message, bot: Bot, session: AsyncSession) -> None:
     await send_link(message, bot, session, message.from_user)

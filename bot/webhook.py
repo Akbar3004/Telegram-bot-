@@ -117,7 +117,7 @@ async def app(scope, receive, send) -> None:
         elif route == "setup" or path.endswith("/setup"):
             status, payload = await handle_setup(headers, query)
         else:
-            status, payload = 200, {"ok": True, "service": "telegram-konkurs-bot", "path": path, "route": route}
+            status, payload = 200, {"ok": True, "service": "telegram-konkurs-bot"}
     except Exception as e:
         log.exception("So'rovda xato")
         status, payload = 500, {"ok": False, "error": type(e).__name__}

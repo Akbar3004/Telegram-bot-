@@ -98,7 +98,8 @@ NO_GROUP = (
 
 def rating_line(row: repo.RatingRow) -> str:
     wins = f" | 🏆 {row.wins}" if row.wins else ""
-    return f"{place_icon(row.place)} {mention(row.user, row.user_id)} — <b>{row.count}</b> ta{wins}"
+    left = f" <i>(+{row.added} / −{row.left} chiqqan)</i>" if row.left else ""
+    return f"{place_icon(row.place)} {mention(row.user, row.user_id)} — <b>{row.count}</b> ta{left}{wins}"
 
 
 def short_name(row: repo.RatingRow, limit: int = 22) -> str:
@@ -111,19 +112,24 @@ async def main_menu(session: AsyncSession) -> tuple[str, InlineKeyboardMarkup]:
     if gid is None:
         return NO_GROUP, InlineKeyboardMarkup(inline_keyboard=[[btn("🔄 Tekshirish", Menu(action="main"))]])
     rnd = await repo.current_round(session, gid)
-    rows = await repo.rating(session, rnd.id, await repo.get_flag(session, "subtract_left"))
+    rows = await repo.round_rating(session, rnd)
     total = sum(r.count for r in rows)
     lines = [
         "👑 <b>Admin panel</b>",
-        f"🔢 Tur: <b>#{rnd.number}</b> ({repo.fmt_dt(rnd.started_at)} dan)",
-        f"👥 Qatnashchilar: <b>{len(rows)}</b> | Qo'shilganlar: <b>{total}</b>",
-        "",
-        "📊 <b>TOP-10 reyting:</b>",
+        f"🔢 Tur: <b>#{rnd.number}</b> ({repo.fmt_dt(repo.to_local(rnd.started_at))} dan)",
+        f"👥 Qatnashchilar: <b>{len(rows)}</b> | Hisob jami: <b>{total}</b>",
     ]
+    rule = repo.rule_text(rnd)
+    if rule:
+        winners = repo.winners_by_rule(rnd, rows)
+        lines += [rule] + ([f"👑 Shartni bajarganlar: <b>{len(winners)}</b> nafar"] if rnd.win_mode else [])
+    lines += ["", "📊 <b>TOP-10 reyting:</b>"]
     lines += [rating_line(r) for r in rows[:10]] or ["<i>Hozircha hech kim odam qo'shmagan.</i>"]
     lines.append("\n<i>🏆 — necha marta g'olib bo'lgani</i>")
     kb = InlineKeyboardBuilder()
     kb.row(btn("📊 To'liq reyting", RatingPage(page=0)), btn("🎁 Mukofot yuborish", PrizeCb(action="start")))
+    kb.row(btn("🎯 Konkurs sharti", Menu(action="rules")), btn("👑 G'oliblar (shart)", Menu(action="winners")))
+    kb.row(btn("📢 Reytingni guruhga yuborish", Menu(action="post")))
     kb.row(btn("📝 Shablonlar", TplCb(action="list")), btn("🏆 G'oliblar tarixi", Menu(action="history")))
     kb.row(btn("🔄 Yangi tur", Menu(action="newround")), btn("⚙️ Sozlamalar", Menu(action="settings")))
     kb.row(btn("📥 Excel (CSV)", Menu(action="export")), btn("♻️ Yangilash", Menu(action="main")))

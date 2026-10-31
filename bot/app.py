@@ -30,7 +30,8 @@ def create_dispatcher() -> Dispatcher:
 
 async def setup_bot_commands(bot: Bot) -> None:
     await bot.set_my_commands([
-        BotCommand(command="start", description="Natijamni ko'rish"),
+        BotCommand(command="start", description="Boshlash"),
+        BotCommand(command="natija", description="Natijamni ko'rish"),
         BotCommand(command="link", description="Shaxsiy taklif havolam"),
     ])
     for admin_id in get_settings().admin_ids:

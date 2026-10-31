@@ -36,6 +36,11 @@ class Round(Base):
     number: Mapped[int] = mapped_column(Integer)
     started_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # G'olib aniqlash sharti. deadline (UTC) — shu vaqtgacha qo'shilganlar hisoblanadi.
+    # win_mode: "top" — eng ko'p qo'shgan win_value nafar; "goal" — kamida win_value ta qo'shganlar.
+    deadline: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    win_mode: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    win_value: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class Addition(Base):

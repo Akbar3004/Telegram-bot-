@@ -1,8 +1,8 @@
 """Ma'lumotlar bazasi bilan ishlash funksiyalari (biznes-mantiq shu yerda)."""
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import and_, case, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import Addition, InviteLink, Round, Setting, Template, User, Win, utcnow
@@ -146,18 +146,28 @@ class RatingRow:
     place: int
     user_id: int
     user: User | None
-    count: int
+    count: int  # hisob: qo'shganlar (sozlamaga ko'ra chiqib ketganlar ayirilgan)
     wins: int
+    added: int = 0  # qo'shganlar (muddatgacha)
+    left: int = 0  # shulardan muddatgacha guruhni tark etganlar
 
 
-async def rating(s: AsyncSession, round_id: int, subtract_left: bool) -> list[RatingRow]:
-    cnt = func.count(Addition.id).label("cnt")
-    last = func.max(Addition.added_at).label("last")
-    q = select(Addition.adder_id, cnt, last).where(Addition.round_id == round_id)
-    if subtract_left:
-        q = q.where(Addition.left_at.is_(None))
+async def rating(
+    s: AsyncSession, round_id: int, subtract_left: bool, until: datetime | None = None
+) -> list[RatingRow]:
+    """Tur reytingi. `until` berilsa — faqat shu vaqtgacha qo'shilganlar va shu vaqtgacha chiqib ketganlar hisobga olinadi."""
+    left_cond = Addition.left_at.is_not(None)
+    if until is not None:
+        left_cond = and_(left_cond, Addition.left_at <= until)
+    added = func.count(Addition.id).label("added_cnt")
+    left = func.coalesce(func.sum(case((left_cond, 1), else_=0)), 0).label("left_cnt")
+    score = (added - left) if subtract_left else added
+    last = func.max(Addition.added_at).label("last_at")
+    q = select(Addition.adder_id, added, left, last).where(Addition.round_id == round_id)
+    if until is not None:
+        q = q.where(Addition.added_at <= until)
     # Teng natijada — shu songa birinchi yetib kelgan yuqorida turadi
-    q = q.group_by(Addition.adder_id).order_by(cnt.desc(), last.asc())
+    q = q.group_by(Addition.adder_id).having(score > 0).order_by(score.desc(), last.asc())
     rows = (await s.execute(q)).all()
     if not rows:
         return []
@@ -167,9 +177,78 @@ async def rating(s: AsyncSession, round_id: int, subtract_left: bool) -> list[Ra
         (await s.execute(select(Win.user_id, func.count(Win.id)).where(Win.user_id.in_(ids)).group_by(Win.user_id))).all()
     )
     return [
-        RatingRow(place=i, user_id=r.adder_id, user=users.get(r.adder_id), count=r.cnt, wins=wins.get(r.adder_id, 0))
+        RatingRow(place=i, user_id=r.adder_id, user=users.get(r.adder_id),
+                  count=r.added_cnt - r.left_cnt if subtract_left else r.added_cnt,
+                  wins=wins.get(r.adder_id, 0), added=r.added_cnt, left=r.left_cnt)
         for i, r in enumerate(rows, 1)
     ]
+
+
+async def round_rating(s: AsyncSession, rnd: Round) -> list[RatingRow]:
+    """Turning amaldagi reytingi: sozlama va konkurs muddati hisobga olinadi."""
+    return await rating(s, rnd.id, await get_flag(s, "subtract_left"), until=rnd.deadline)
+
+
+# --- Konkurs sharti (muddat va g'olib aniqlash usuli) ------------------------
+
+# O'zbekiston vaqti (UTC+5, yozgi vaqt yo'q). Bazada vaqt UTC'da saqlanadi.
+LOCAL_TZ = timezone(timedelta(hours=5))
+WIN_MODES = ("top", "goal")
+
+
+def to_local(dt: datetime | None) -> datetime | None:
+    return dt.replace(tzinfo=timezone.utc).astimezone(LOCAL_TZ).replace(tzinfo=None) if dt else None
+
+
+def parse_deadline(text: str) -> datetime | None:
+    """"05.11.2026" yoki "05.11.2026 18:00" (Toshkent vaqti) -> UTC. Faqat sana bo'lsa — kun oxirigacha."""
+    text = " ".join(text.strip().replace("/", ".").replace("-", ".").split())
+    for fmt, date_only in (("%d.%m.%Y %H:%M", False), ("%d.%m.%Y", True)):
+        try:
+            dt = datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+        if date_only:
+            dt = dt.replace(hour=23, minute=59, second=59)
+        return dt.replace(tzinfo=LOCAL_TZ).astimezone(timezone.utc).replace(tzinfo=None)
+    return None
+
+
+async def set_deadline(s: AsyncSession, rnd: Round, deadline: datetime | None) -> None:
+    rnd.deadline = deadline
+    await s.commit()
+
+
+async def set_win_rule(s: AsyncSession, rnd: Round, mode: str | None, value: int | None) -> None:
+    rnd.win_mode = mode if mode in WIN_MODES else None
+    rnd.win_value = value if rnd.win_mode else None
+    await s.commit()
+
+
+def is_finished(rnd: Round) -> bool:
+    return rnd.deadline is not None and utcnow() > rnd.deadline
+
+
+def winners_by_rule(rnd: Round, rows: list[RatingRow]) -> list[RatingRow]:
+    """Shart bo'yicha g'oliblar: TOP-N yoki kamida N ta qo'shganlar."""
+    if not rnd.win_mode or not rnd.win_value:
+        return []
+    if rnd.win_mode == "top":
+        return rows[: rnd.win_value]
+    return [r for r in rows if r.count >= rnd.win_value]
+
+
+def rule_text(rnd: Round) -> str:
+    """Konkurs shartini foydalanuvchilarga tushunarli qilib yozadi (HTML)."""
+    parts = []
+    if rnd.deadline:
+        state = " — <i>yakunlangan</i>" if is_finished(rnd) else ""
+        parts.append(f"⏰ Muddat: <b>{fmt_dt(to_local(rnd.deadline))}</b> gacha (Toshkent vaqti){state}")
+    if rnd.win_mode == "top" and rnd.win_value:
+        parts.append(f"🏆 G'oliblar: eng ko'p odam qo'shgan <b>TOP-{rnd.win_value}</b> ishtirokchi")
+    elif rnd.win_mode == "goal" and rnd.win_value:
+        parts.append(f"🎯 G'oliblar: kamida <b>{rnd.win_value} ta</b> odam qo'shgan har bir ishtirokchi")
+    return "\n".join(parts)
 
 
 @dataclass
@@ -182,12 +261,14 @@ class UserStats:
     place: int | None
     wins: int
     won_this_round: bool
+    round_added: int = 0  # joriy turda (muddatgacha) qo'shganlari
+    round_left: int = 0  # shulardan muddatgacha chiqib ketganlar
 
 
 async def user_stats(s: AsyncSession, chat_id: int, user_id: int) -> UserStats:
     rnd = await current_round(s, chat_id)
     subtract = await get_flag(s, "subtract_left")
-    rows = await rating(s, rnd.id, subtract)
+    rows = await round_rating(s, rnd)
     me = next((r for r in rows if r.user_id == user_id), None)
     total_q = select(func.count(Addition.id)).where(Addition.chat_id == chat_id, Addition.adder_id == user_id)
     total = await s.scalar(total_q.where(Addition.left_at.is_(None)) if subtract else total_q) or 0
@@ -204,6 +285,8 @@ async def user_stats(s: AsyncSession, chat_id: int, user_id: int) -> UserStats:
         place=me.place if me else None,
         wins=wins,
         won_this_round=won,
+        round_added=me.added if me else 0,
+        round_left=me.left if me else 0,
     )
 
 
