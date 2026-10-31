@@ -4,7 +4,6 @@ from datetime import datetime
 import pytest
 from aiogram import Bot, Dispatcher
 from aiogram.client.session.base import BaseSession
-from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.methods import (
     CreateChatInviteLink, GetMe,
     CopyMessage, DeleteMessage, EditMessageText,
@@ -16,6 +15,7 @@ from aiogram.types import (
 )
 
 from bot.db import repo
+from bot.db.fsm_storage import DbStorage
 from bot.handlers import setup_routers
 from bot.handlers.admin.common import Menu, PrizeCb, RatingPage, UserCb
 from bot.middlewares import DbSessionMiddleware
@@ -80,7 +80,7 @@ async def env(sessionmaker):
     get_settings.cache_clear()
     fake = FakeSession()
     bot = Bot("42:TEST", session=fake)
-    dp = Dispatcher(storage=MemoryStorage())
+    dp = Dispatcher(storage=DbStorage(sessionmaker))
     dp.update.outer_middleware(DbSessionMiddleware(sessionmaker))
     root = setup_routers()
     dp.include_router(root)

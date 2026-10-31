@@ -42,7 +42,66 @@ va adminga reyting, g'oliblarga mukofot xabarini yuborish hamda g'oliblar tarixi
 > ⚠️ Telegram qoidasiga ko'ra bot faqat **botga /start bosgan** foydalanuvchiga xabar yubora oladi.
 > Shuning uchun guruhda ishtirokchilarga botga start bosishni aytib qo'ying.
 
-## O'rnatish
+## 🚀 Vercel'ga joylashtirish (tavsiya etiladi)
+
+Vercel'da bot **webhook** rejimida ishlaydi: Telegram har bir yangilanishni `https://<loyiha>.vercel.app/api/webhook`
+manziliga yuboradi. Vercel fayllarni saqlamaydi, shuning uchun ma'lumotlar **PostgreSQL** bazasida turadi
+(bepul Neon bazasi yetarli).
+
+### 1. Kodni GitHub'dagi asosiy branchga o'tkazing
+Vercel production'ni `main` branchdan oladi. Preview (boshqa branch) manzillari standart holda
+**Vercel Authentication** bilan himoyalangan, Telegram ularga kira olmaydi. Shuning uchun kodni `main`ga
+birlashtiring (yoki Vercel'da Settings → Deployment Protection'ni o'chiring).
+
+### 2. Vercel'da loyiha yarating
+[vercel.com](https://vercel.com) → **Add New… → Project** → shu GitHub repozitoriyasini tanlang → **Deploy**.
+Framework tanlash shart emas: `vercel.json` va `api/index.py` hammasini o'zi sozlaydi.
+
+### 3. Bazani ulang
+Loyiha ichida **Storage → Create Database → Neon (Serverless Postgres)** → loyihaga ulang.
+Neon loyihaga `DATABASE_URL` o'zgaruvchisini avtomatik qo'shadi. Agar u boshqa nom bilan qo'shilgan bo'lsa
+(masalan `POSTGRES_URL`), uning qiymatini `DATABASE_URL` nomi bilan qo'shing. `postgres://...?sslmode=require`
+ko'rinishidagi havolani shundayligicha qo'yavering, bot uni o'zi moslaydi.
+
+Supabase yoki boshqa PostgreSQL ham ishlaydi.
+
+### 4. Environment Variables
+**Settings → Environment Variables** bo'limiga quyidagilarni qo'shing:
+
+| Nomi | Qiymati |
+|---|---|
+| `BOT_TOKEN` | BotFather bergan token |
+| `ADMIN_IDS` | Adminlar ID'si, vergul bilan: `111111111,222222222` |
+| `WEBHOOK_SECRET` | 16+ belgili tasodifiy kalit (A-Z, a-z, 0-9, `_`, `-`) |
+| `DATABASE_URL` | 3-qadamdagi baza havolasi |
+| `GROUP_ID` | (ixtiyoriy) guruh ID'si, bo'sh qoldirsangiz guruhda `/bind` yozasiz |
+
+`WEBHOOK_SECRET` yaratish:
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+O'zgaruvchilarni qo'shgandan keyin **Deployments → ⋯ → Redeploy** bosing.
+
+### 5. Webhookni yoqing (bir marta)
+Brauzerda oching:
+```
+https://<loyiha>.vercel.app/api/setup?secret=<WEBHOOK_SECRET>
+```
+Javobda `"ok": true` va `"webhook": "https://<loyiha>.vercel.app/api/webhook"` chiqsa, bot ishga tushdi ✅
+
+### 6. Guruhni ulang
+Botni guruhga qo'shing va admin qiling (**xabarlarni o'chirish** va **foydalanuvchilarni taklif qilish** huquqlari bilan),
+guruhda `/bind` yozing va botga shaxsiy chatda `/start` bosing.
+
+### Eslatmalar
+- Bot javob bermasa, avval Vercel'da **Logs** bo'limini, keyin `/api/setup` sahifasini oching.
+  U yerdagi `pending_updates` qiymati Telegram yuborolmay turgan yangilanishlar sonini ko'rsatadi.
+- Botni kompyuterda `python -m bot` bilan ishga tushirsangiz, webhook o'chadi (polling rejimi).
+  Vercel'ga qaytish uchun `/api/setup` sahifasini yana oching.
+- `/api/setup` havolasida maxfiy kalit bor, uni hech kimga bermang.
+
+## Server yoki Docker'da ishga tushirish (polling)
 
 1. [@BotFather](https://t.me/BotFather) orqali bot yarating va token oling.
 2. BotFather'dagi **Group Privacy** sozlamasini o'zgartirish shart emas: xizmat xabarlari baribir keladi.
@@ -72,16 +131,26 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
+PostgreSQL'da ham sinash uchun:
+```bash
+TEST_POSTGRES_URL=postgresql://user:pass@localhost:5432/test_db pytest
+```
+
 ## Tuzilishi
 
 ```
 bot/
-  __main__.py          — ishga tushirish
+  __main__.py          — polling rejimida ishga tushirish (server/Docker)
+  webhook.py           — Vercel uchun webhook ilova (ASGI)
+  app.py               — Bot va Dispatcher yaratish
+  db/fsm_storage.py    — dialog holatlarini bazada saqlash
   config.py            — .env sozlamalari
   db/models.py         — jadvallar (users, rounds, additions, wins, templates, settings)
   db/repo.py           — hisoblash va reyting mantig'i
   handlers/group.py    — guruh hodisalari (qo'shish, chiqish, xabarlarni o'chirish)
   handlers/user.py     — oddiy foydalanuvchi uchun /start
   handlers/admin/      — admin panel: menu, shablonlar, mukofot yuborish
-tests/                 — unit va to'liq oqim testlari
+api/index.py           — Vercel kirish nuqtasi
+vercel.json            — Vercel sozlamalari
+tests/                 — unit, to'liq oqim va webhook testlari
 ```

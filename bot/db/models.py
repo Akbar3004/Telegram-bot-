@@ -98,3 +98,14 @@ class InviteLink(Base):
     owner_id: Mapped[int] = mapped_column(BigInteger, index=True)
     link: Mapped[str] = mapped_column(String(255), unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class FsmRecord(Base):
+    """Admin panel dialog holati (FSM). Serverless'da xotira saqlanmagani uchun bazada turadi."""
+
+    __tablename__ = "fsm_states"
+
+    key: Mapped[str] = mapped_column(String(255), primary_key=True)
+    state: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    data: Mapped[str] = mapped_column(Text, default="{}")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)

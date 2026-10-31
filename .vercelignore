@@ -1,0 +1,8 @@
+tests/
+data/
+.env
+Dockerfile
+docker-compose.yml
+requirements-dev.txt
+pytest.ini
+*.db

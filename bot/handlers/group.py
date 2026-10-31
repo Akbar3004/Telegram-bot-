@@ -146,7 +146,6 @@ async def left_member_message(message: Message, session: AsyncSession) -> None:
 
 TOP_SIZE = 10
 TOP_COOLDOWN = 60  # soniya: guruhni /top bilan spam qilib bo'lmasin
-_last_top: dict[int, float] = {}
 
 
 @router.message(Command("top"))
@@ -156,10 +155,11 @@ async def cmd_top(message: Message, bot: Bot, session: AsyncSession) -> None:
     await safe_delete(message)
     if not await repo.get_flag(session, "top_enabled"):
         return
-    now = time.monotonic()
-    if now - _last_top.get(message.chat.id, 0) < TOP_COOLDOWN:
+    # Oxirgi vaqt bazada saqlanadi — serverless (Vercel) muhitida xotira so'rovlar orasida saqlanmaydi
+    now = time.time()
+    if now - float(await repo.get_setting(session, "last_top_at") or 0) < TOP_COOLDOWN:
         return
-    _last_top[message.chat.id] = now
+    await repo.set_setting(session, "last_top_at", str(now))
 
     rnd = await repo.current_round(session, message.chat.id)
     rows = await repo.rating(session, rnd.id, await repo.get_flag(session, "subtract_left"))

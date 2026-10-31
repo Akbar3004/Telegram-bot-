@@ -12,6 +12,18 @@ class Settings(BaseSettings):
     admin_ids: Annotated[list[int], NoDecode] = []
     group_id: int | None = None
     database_url: str = "sqlite+aiosqlite:///data/bot.db"
+    # Webhook (Vercel) rejimi uchun maxfiy kalit: Telegram so'rovlarini tekshirish va /api/setup ni himoyalash
+    webhook_secret: str | None = None
+
+    @field_validator("webhook_secret", mode="before")
+    @classmethod
+    def _check_secret(cls, v):
+        if v in ("", None):
+            return None
+        import re
+        if not re.fullmatch(r"[A-Za-z0-9_-]{16,256}", v):
+            raise ValueError("WEBHOOK_SECRET faqat A-Z, a-z, 0-9, _ va - belgilaridan iborat, 16-256 uzunlikda bo'lishi kerak")
+        return v
 
     @field_validator("admin_ids", mode="before")
     @classmethod
