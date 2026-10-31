@@ -166,8 +166,10 @@ async def rating(
     q = select(Addition.adder_id, added, left, last).where(Addition.round_id == round_id)
     if until is not None:
         q = q.where(Addition.added_at <= until)
-    # Teng natijada — shu songa birinchi yetib kelgan yuqorida turadi
-    q = q.group_by(Addition.adder_id).having(score > 0).order_by(score.desc(), last.asc())
+    # Teng natijada — shu songa birinchi yetib kelgan yuqorida turadi. Vaqt bir xil bo'lsa
+    # (soat aniqligi yetmasa) — yozuv tartib raqami hal qiladi
+    q = (q.group_by(Addition.adder_id).having(score > 0)
+         .order_by(score.desc(), last.asc(), func.max(Addition.id).asc()))
     rows = (await s.execute(q)).all()
     if not rows:
         return []
