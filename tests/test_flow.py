@@ -6,11 +6,12 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.session.base import BaseSession
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.methods import (
+    CreateChatInviteLink, GetMe,
     CopyMessage, DeleteMessage, EditMessageText,
     GetChatMember, SendDocument, SendMessage, TelegramMethod,
 )
 from aiogram.types import (
-    CallbackQuery, Chat, ChatMemberAdministrator, ChatMemberLeft, ChatMemberMember, ChatMemberUpdated,
+    CallbackQuery, Chat, ChatInviteLink, ChatMemberAdministrator, ChatMemberLeft, ChatMemberMember, ChatMemberUpdated,
     Message, MessageId, Update, User,
 )
 
@@ -33,12 +34,27 @@ class FakeSession(BaseSession):
         super().__init__()
         self.calls: list[TelegramMethod] = []
         self.blocked: set[int] = set()
+        self.privacy_restricted: set[int] = set()  # tg://user?id= tugmasini rad etadigan foydalanuvchilar
+        self.links = 0
 
     async def make_request(self, bot, method, timeout=None):
         self.calls.append(method)
         if isinstance(method, (SendMessage, CopyMessage)) and method.chat_id in self.blocked:
             from aiogram.exceptions import TelegramForbiddenError
             raise TelegramForbiddenError(method=method, message="Forbidden: bot was blocked by the user")
+        markup = getattr(method, "reply_markup", None)
+        if markup is not None and hasattr(markup, "inline_keyboard"):
+            for row in markup.inline_keyboard:
+                for b in row:
+                    if b.url and b.url.startswith("tg://user?id=") and int(b.url.split("=")[1]) in self.privacy_restricted:
+                        from aiogram.exceptions import TelegramBadRequest
+                        raise TelegramBadRequest(method=method, message="Bad Request: BUTTON_USER_PRIVACY_RESTRICTED")
+        if isinstance(method, GetMe):
+            return User(id=42, is_bot=True, first_name="Bot", username="konkurs_bot")
+        if isinstance(method, CreateChatInviteLink):
+            self.links += 1
+            return ChatInviteLink(invite_link=f"https://t.me/+LINK{self.links}", creator=user(42), creates_join_request=False,
+                                  is_primary=False, is_revoked=False, name=method.name)
         if isinstance(method, GetChatMember):
             return ChatMemberAdministrator.model_construct(user=user(42), status="administrator", can_delete_messages=True)
         if isinstance(method, CopyMessage):
@@ -84,6 +100,17 @@ async def env(sessionmaker):
             chat=GROUP, from_user=user(adder), date=NOW,
             old_chat_member=ChatMemberLeft(user=user(member)), new_chat_member=ChatMemberMember(user=user(member))))
 
+    async def join_link(member: int, link: str):
+        await feed(chat_member=ChatMemberUpdated(
+            chat=GROUP, from_user=user(member), date=NOW,
+            invite_link=ChatInviteLink(invite_link=link, creator=user(42), creates_join_request=False,
+                                       is_primary=False, is_revoked=False),
+            old_chat_member=ChatMemberLeft(user=user(member)), new_chat_member=ChatMemberMember(user=user(member))))
+
+    async def group_cmd(uid: int, text: str):
+        await feed(message=Message(message_id=next(counter), date=NOW, chat=GROUP, from_user=user(uid), text=text,
+                                   entities=[{"type": "bot_command", "offset": 0, "length": len(text)}]))
+
     async def leave(member: int):
         await feed(chat_member=ChatMemberUpdated(
             chat=GROUP, from_user=user(member), date=NOW,
@@ -100,7 +127,7 @@ async def env(sessionmaker):
                                                 message=msg, data=data if isinstance(data, str) else data.pack()))
 
     ns = type("Env", (), {})()
-    ns.__dict__.update(fake=fake, feed=feed, bind=bind, add=add, leave=leave, private=private, click=click, sm=sessionmaker)
+    ns.__dict__.update(fake=fake, feed=feed, join_link=join_link, group_cmd=group_cmd, bind=bind, add=add, leave=leave, private=private, click=click, sm=sessionmaker)
     yield ns
     for r in root.sub_routers:  # modul darajasidagi routerlarni keyingi test uchun bo'shatamiz
         r._parent_router = None
@@ -198,3 +225,71 @@ async def test_other_groups_ignored(env):
     async with env.sm() as s:
         rnd = await repo.current_round(s, GROUP.id)
         assert await repo.rating(s, rnd.id, True) == []
+
+
+async def test_personal_invite_link_counts_for_owner(env):
+    await env.bind()
+    await env.private(10, "/start link")
+    assert "shaxsiy taklif havolangiz" in last_text(env.fake) and "https://t.me/+LINK1" in last_text(env.fake)
+    await env.private(10, "/link")  # qayta so'ralsa — o'sha havola, yangisi yaratilmaydi
+    assert env.fake.links == 1
+
+    await env.join_link(500, "https://t.me/+LINK1")
+    await env.join_link(501, "https://t.me/+LINK1")
+    await env.join_link(502, "https://t.me/+OTHER")  # begona havola — hech kimga hisoblanmaydi
+    await env.join_link(10, "https://t.me/+LINK1")   # egasining o'zi — hisoblanmaydi
+    async with env.sm() as s:
+        st = await repo.user_stats(s, GROUP.id, 10)
+        assert (st.round_count, st.link_count) == (2, 2)
+
+    await env.private(ADMIN, "/start")
+    await env.click(UserCb(action="card", uid=10))
+    assert "havola orqali: <b>2</b>" in last_text(env.fake)
+
+
+async def test_left_members_show_remaining_count(env):
+    """25 ta qo'shib, 15 tasi chiqib ketsa — reytingda 10 ta ko'rinadi."""
+    await env.bind()
+    for m in range(1000, 1025):
+        await env.add(10, m)
+    for m in range(1000, 1015):
+        await env.leave(m)
+    async with env.sm() as s:
+        st = await repo.user_stats(s, GROUP.id, 10)
+        assert (st.round_count, st.left_count) == (10, 15)
+    # Sozlama o'chirilsa — 25 ta ko'rinadi
+    await env.click(Menu(action="set.subtract_left"))
+    async with env.sm() as s:
+        assert (await repo.user_stats(s, GROUP.id, 10)).round_count == 25
+
+
+async def test_top_command_in_group(env):
+    await env.bind()
+    await env.add(10, 100)
+    await env.add(10, 101)
+    await env.add(20, 200)
+    await env.group_cmd(20, "/top")
+    msg = env.fake.sent(SendMessage, chat_id=GROUP.id)[-1]
+    assert "TOP-10" in msg.text and "User10 — <b>2</b> ta" in msg.text and "tg://user" not in msg.text
+    assert msg.reply_markup.inline_keyboard[0][0].url == "https://t.me/konkurs_bot?start=link"
+    # Cooldown: darhol qayta /top — yangi xabar chiqmaydi, lekin buyruq o'chiriladi
+    before = len(env.fake.sent(SendMessage, chat_id=GROUP.id))
+    await env.group_cmd(20, "/top")
+    assert len(env.fake.sent(SendMessage, chat_id=GROUP.id)) == before
+
+
+async def test_profile_buttons_and_privacy_fallback(env):
+    await env.bind()
+    await env.add(10, 100)
+    await env.add(20, 200)
+    await env.private(ADMIN, "/start")
+    await env.click(UserCb(action="card", uid=10))
+    urls = [b.url for row in env.fake.calls[-2].reply_markup.inline_keyboard for b in row if b.url]
+    assert "tg://user?id=10" in urls
+
+    # 20 ning maxfiyligi tugmani taqiqlaydi — reyting baribir ochiladi, tugmalarsiz va izoh bilan
+    env.fake.privacy_restricted.add(20)
+    await env.click(RatingPage(page=0))
+    edits = env.fake.sent(EditMessageText)
+    assert "maxfiylik" in edits[-1].text
+    assert not any((b.url or "").startswith("tg://") for row in edits[-1].reply_markup.inline_keyboard for b in row)

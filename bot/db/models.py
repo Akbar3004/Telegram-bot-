@@ -49,6 +49,8 @@ class Addition(Base):
     round_id: Mapped[int] = mapped_column(ForeignKey("rounds.id"), index=True)
     adder_id: Mapped[int] = mapped_column(BigInteger, index=True)
     member_id: Mapped[int] = mapped_column(BigInteger)
+    # "add" — o'zi qo'shgan, "link" — shaxsiy taklif havolasi orqali kirgan
+    source: Mapped[str] = mapped_column(String(8), default="add", server_default="add")
     added_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     left_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
@@ -83,3 +85,16 @@ class Setting(Base):
 
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[str] = mapped_column(Text)
+
+
+class InviteLink(Base):
+    """Ishtirokchining shaxsiy taklif havolasi: shu havola orqali kirganlar unga hisoblanadi."""
+
+    __tablename__ = "invite_links"
+    __table_args__ = (UniqueConstraint("chat_id", "owner_id", name="uq_link_owner"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    owner_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    link: Mapped[str] = mapped_column(String(255), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

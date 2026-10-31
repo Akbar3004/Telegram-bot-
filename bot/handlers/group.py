@@ -1,16 +1,19 @@
 """Guruhdagi hodisalar: kim kimni qo'shgani, chiqib ketganlar, xizmat xabarlarini o'chirish."""
+import html
 import logging
+import time
 
 from aiogram import Bot, F, Router
 from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.filters import JOIN_TRANSITION, LEAVE_TRANSITION, ChatMemberUpdatedFilter, Command
-from aiogram.types import ChatMemberUpdated, Message
+from aiogram.types import ChatMemberUpdated, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import get_settings
 from ..db import repo
 from ..filters import IsAdmin
+from ..utils import full_name, place_icon
 
 log = logging.getLogger(__name__)
 router = Router(name="group")
@@ -36,8 +39,12 @@ async def bind_group(bot: Bot, session: AsyncSession, chat_id: int, title: str |
     warn = ""
     if me.status != "administrator":
         warn = "\n\n⚠️ Bot hali admin emas! Botni admin qiling va <b>xabarlarni o'chirish</b> huquqini bering."
-    elif not getattr(me, "can_delete_messages", False):
-        warn = "\n\n⚠️ Botga <b>xabarlarni o'chirish</b> huquqini bering."
+    else:
+        missing = [name for attr, name in (("can_delete_messages", "xabarlarni o'chirish"),
+                                           ("can_invite_users", "foydalanuvchilarni taklif qilish (havolalar uchun)"))
+                   if not getattr(me, attr, False)]
+        if missing:
+            warn = "\n\n⚠️ Botga quyidagi huquqlarni bering: <b>" + ", ".join(missing) + "</b>"
     try:
         await bot.send_message(
             notify_id, f"✅ Guruh ulandi: <b>{title or chat_id}</b>\nID: <code>{chat_id}</code>{warn}\n\n/start — admin panel"
@@ -75,13 +82,24 @@ async def member_joined(event: ChatMemberUpdated, session: AsyncSession) -> None
     actor = event.from_user
     await repo.upsert_user(session, member, commit=False)
     await repo.upsert_user(session, actor)
+    if member.is_bot:
+        return
+    # Shaxsiy taklif havolasi orqali kirgan bo'lsa — havola egasiga hisoblanadi
+    if event.invite_link is not None:
+        owner = await repo.link_owner(session, event.chat.id, event.invite_link.invite_link)
+        if owner is not None:
+            if await repo.record_addition(session, event.chat.id, owner, member.id, source="link"):
+                log.info("%s havolasi orqali %s kirdi (chat %s)", owner, member.id, event.chat.id)
+            else:
+                await repo.mark_rejoined(session, event.chat.id, member.id)
+            return
     self_join = (
         actor.id == member.id
         or event.invite_link is not None
         or bool(getattr(event, "via_join_request", False))
         or bool(getattr(event, "via_chat_folder_invite_link", False))
     )
-    if member.is_bot or self_join:
+    if self_join:
         await repo.mark_rejoined(session, event.chat.id, member.id)
         return
     if await repo.record_addition(session, event.chat.id, actor.id, member.id):
@@ -122,3 +140,46 @@ async def left_member_message(message: Message, session: AsyncSession) -> None:
     await repo.mark_left(session, message.chat.id, message.left_chat_member.id)
     if await repo.get_flag(session, "delete_service"):
         await safe_delete(message)
+
+
+# --- /top — reytingni guruhda hammaga ko'rsatish ---------------------------
+
+TOP_SIZE = 10
+TOP_COOLDOWN = 60  # soniya: guruhni /top bilan spam qilib bo'lmasin
+_last_top: dict[int, float] = {}
+
+
+@router.message(Command("top"))
+async def cmd_top(message: Message, bot: Bot, session: AsyncSession) -> None:
+    if not await is_target_group(session, message.chat.id):
+        return
+    await safe_delete(message)
+    if not await repo.get_flag(session, "top_enabled"):
+        return
+    now = time.monotonic()
+    if now - _last_top.get(message.chat.id, 0) < TOP_COOLDOWN:
+        return
+    _last_top[message.chat.id] = now
+
+    rnd = await repo.current_round(session, message.chat.id)
+    rows = await repo.rating(session, rnd.id, await repo.get_flag(session, "subtract_left"))
+    lines = [f"🏆 <b>TOP-{TOP_SIZE} — eng ko'p odam qo'shganlar</b> (tur #{rnd.number})", ""]
+    # Ismlar havolasiz — guruhda hech kim bezovta qilinmaydi
+    lines += [f"{place_icon(r.place)} {html.escape(full_name(r.user, r.user_id))} — <b>{r.count}</b> ta" for r in rows[:TOP_SIZE]]
+    if not rows:
+        lines.append("<i>Hozircha hech kim odam qo'shmagan. Birinchi bo'ling!</i>")
+    lines.append("\n👇 O'z natijangiz va shaxsiy taklif havolangizni botdan oling")
+    me = await bot.me()
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="🔗 Shaxsiy havolamni olish", url=f"https://t.me/{me.username}?start=link")
+    ]])
+
+    # Eski /top xabarini o'chiramiz — guruhda faqat eng oxirgisi qoladi
+    old = await repo.get_setting(session, "last_top_msg")
+    if old:
+        try:
+            await bot.delete_message(message.chat.id, int(old))
+        except (TelegramBadRequest, TelegramForbiddenError):
+            pass
+    sent = await bot.send_message(message.chat.id, "\n".join(lines), reply_markup=kb)
+    await repo.set_setting(session, "last_top_msg", str(sent.message_id))

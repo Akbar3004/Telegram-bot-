@@ -14,7 +14,7 @@ from ...db.models import Win
 from ...utils import full_name, mention
 from .common import (
     NO_GROUP, PAGE_SIZE, Menu, RatingPage, UserCb, back_kb, btn, edit, group_id, main_menu,
-    rating_line, short_name, user_card,
+    profile_button, rating_line, short_name, user_card,
 )
 
 router = Router(name="admin_menu")
@@ -50,10 +50,13 @@ async def cb_rating(call: CallbackQuery, callback_data: RatingPage, session: Asy
     chunk = rows[page * PAGE_SIZE:(page + 1) * PAGE_SIZE]
     lines = [f"📊 <b>Reyting — tur #{rnd.number}</b> (sahifa {page + 1}/{pages})", ""]
     lines += [rating_line(r) for r in chunk] or ["<i>Hozircha bo'sh.</i>"]
-    lines.append("\n👇 Batafsil ko'rish va yozish uchun foydalanuvchini tanlang")
+    lines.append("\n👇 Ism — batafsil karta, 💬 — profiliga o'tib yozish")
     kb = InlineKeyboardBuilder()
     for r in chunk:
-        kb.row(btn(f"{r.place}. {short_name(r)} — {r.count}" + (f" 🏆{r.wins}" if r.wins else ""), UserCb(action="card", uid=r.user_id)))
+        kb.row(
+            btn(f"{r.place}. {short_name(r)} — {r.count}" + (f" 🏆{r.wins}" if r.wins else ""), UserCb(action="card", uid=r.user_id)),
+            profile_button(r.user, r.user_id, "💬"),
+        )
     nav = []
     if page > 0:
         nav.append(btn("◀️", RatingPage(page=page - 1)))
@@ -162,6 +165,7 @@ async def cb_newround_ok(call: CallbackQuery, session: AsyncSession) -> None:
 SETTING_NAMES = {
     "delete_service": "🧹 \"Kim kimni qo'shdi\" xabarlarini o'chirish",
     "subtract_left": "➖ Chiqib ketganlarni hisobdan ayirish",
+    "top_enabled": "📢 Guruhda /top buyrug'i",
 }
 
 
@@ -170,7 +174,7 @@ async def settings_view(session: AsyncSession) -> tuple[str, object]:
     kb = InlineKeyboardBuilder()
     for key, name in SETTING_NAMES.items():
         mark = "✅" if await repo.get_flag(session, key) else "❌"
-        kb.row(btn(f"{mark} {name}", Menu(action=f"set:{key}")))
+        kb.row(btn(f"{mark} {name}", Menu(action=f"set.{key}")))
     kb.row(btn("⬅️ Menyu", Menu(action="main")))
     text = (
         "⚙️ <b>Sozlamalar</b>\n\n"
@@ -186,9 +190,9 @@ async def cb_settings(call: CallbackQuery, session: AsyncSession) -> None:
     await edit(call, *await settings_view(session))
 
 
-@router.callback_query(Menu.filter(F.action.startswith("set:")))
+@router.callback_query(Menu.filter(F.action.startswith("set.")))
 async def cb_toggle(call: CallbackQuery, callback_data: Menu, session: AsyncSession) -> None:
-    key = callback_data.action.split(":", 1)[1]
+    key = callback_data.action.split(".", 1)[1]
     if key in SETTING_NAMES:
         await repo.toggle_flag(session, key)
     await edit(call, *await settings_view(session))

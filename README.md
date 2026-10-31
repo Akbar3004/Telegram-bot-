@@ -9,14 +9,25 @@ va adminga reyting, g'oliblarga mukofot xabarini yuborish hamda g'oliblar tarixi
 - Kim kimni qo'shganini hisoblaydi. Har bir a'zo faqat **bir marta** hisoblanadi: chiqib qayta
   qo'shilish yoki boshqa odam qayta qo'shishi bilan hisobni ko'paytirib bo'lmaydi.
 - Havola orqali o'zi kirganlar va botlar hisoblanmaydi.
-- Guruhdan chiqib ketgan a'zolar hisobdan ayiriladi (sozlamalarda o'chirib qo'ysa bo'ladi).
+- Guruhdan chiqib ketgan a'zolar hisobdan ayiriladi: 25 ta qo'shib, 15 tasi chiqib ketsa, reytingda
+  **10 ta** ko'rinadi. Sozlamalarda o'chirilsa, 25 ta ko'rinadi.
+- **Shaxsiy taklif havolasi:** har bir ishtirokchi botdan o'z havolasini oladi (`/link` yoki
+  "🔗 Shaxsiy taklif havolam" tugmasi). Shu havola orqali kirgan har bir odam havola egasiga hisoblanadi.
+  Bu maxfiylik sozlamasi tufayli guruhga to'g'ridan-to'g'ri qo'shib bo'lmaydigan odamlar uchun kerak.
+- **`/top`** — guruhda hammaga TOP-10 reytingni ko'rsatadi. Bu buyruq daqiqada bir martadan ko'p
+  ishlamaydi, eski `/top` xabari o'chiriladi. Ismlar havolasiz chiqadi, shuning uchun hech kimga
+  bildirishnoma bormaydi. Xabar ostida "🔗 Shaxsiy havolamni olish" tugmasi bor.
 - "Kim kimni qo'shdi" va "guruhdan chiqdi" degan xizmat xabarlarini o'chiradi.
 
 **Admin panel** (botga `/start` bosilganda)
 - Har safar **TOP-10 reyting** darhol ko'rinadi. To'liq reyting sahifalarga bo'lingan.
 - Har bir foydalanuvchi yonida 🏆 belgisi: **necha marta g'olib bo'lgani**.
-- **Foydalanuvchi kartasi:** joriy va umumiy natija, o'rni, g'oliblik soni, kimlarni qo'shgani,
-  profilga havola, bot orqali xabar yozish (matn, rasm, video va boshqalar).
+- **Profilga o'tish tugmalari:** reytingda har bir odam yonida 💬 tugmasi bor, kartada esa
+  "💬 Profiliga o'tib yozish" tugmasi. Mukofot yuborilgandan keyingi hisobotda har bir g'olib uchun
+  tugma chiqadi (avval xabar yetib bormaganlar). Agar foydalanuvchining maxfiylik sozlamasi tugmani
+  taqiqlasa, xabar tugmasiz chiqadi va ism ustiga bosish orqali profil ochiladi.
+- **Foydalanuvchi kartasi:** joriy va umumiy natija (shundan havola orqali nechta), o'rni,
+  g'oliblik soni, kimlarni qo'shgani, bot orqali xabar yozish (matn, rasm, video va boshqalar).
 - **Shablonlar:** mukofot xabarlarini oldindan yozib qo'yish. O'zgaruvchilar: `{name}`,
   `{mention}`, `{place}`, `{count}`, `{wins}`.
 - **Mukofot yuborish:** shablon tanlanadi, ro'yxatdan ✅ bilan belgilanadi yoki TOP-1/3/5/10
@@ -48,7 +59,8 @@ va adminga reyting, g'oliblarga mukofot xabarini yuborish hamda g'oliblar tarixi
    ```bash
    docker compose up -d --build
    ```
-5. Botni guruhga qo'shing va **admin** qiling. Kamida **xabarlarni o'chirish** huquqi kerak.
+5. Botni guruhga qo'shing va **admin** qiling. Kerakli huquqlar: **xabarlarni o'chirish** va
+   **foydalanuvchilarni taklif qilish** (shaxsiy havolalar uchun).
    Admin bo'lmasa, Telegram botga a'zolar haqidagi yangilanishlarni yubormaydi.
 6. Guruhda `/bind` deb yozing (yoki botni admin o'zi qo'shsa, guruh avtomatik ulanadi).
 7. Botga shaxsiy chatda `/start` bosing va admin panel ochiladi.

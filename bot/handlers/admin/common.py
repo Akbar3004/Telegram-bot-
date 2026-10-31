@@ -44,12 +44,43 @@ def back_kb(to: CallbackData | None = None) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[[btn("⬅️ Orqaga", to or Menu(action="main"))]])
 
 
+def profile_url(user, uid: int) -> str:
+    """Profilni ochadigan havola: username bo'lsa t.me/..., bo'lmasa tg://user?id=..."""
+    if user is not None and user.username:
+        return f"https://t.me/{user.username}"
+    return f"tg://user?id={uid}"
+
+
+def profile_button(user, uid: int, text: str = "💬 Profiliga o'tish") -> InlineKeyboardButton:
+    return InlineKeyboardButton(text=text, url=profile_url(user, uid))
+
+
+PRIVACY_NOTE = "\n\n<i>ℹ️ Ba'zi foydalanuvchilarning maxfiylik sozlamasi tufayli profil tugmasi qo'yilmadi — ismiga bosing.</i>"
+
+
+def strip_tg_buttons(kb: InlineKeyboardMarkup | None) -> InlineKeyboardMarkup | None:
+    if kb is None:
+        return None
+    rows = [[b for b in row if not (b.url or "").startswith("tg://")] for row in kb.inline_keyboard]
+    return InlineKeyboardMarkup(inline_keyboard=[r for r in rows if r])
+
+
+async def send_with_fallback(func, text: str, kb: InlineKeyboardMarkup | None):
+    """tg://user?id= tugmasini Telegram maxfiylik sababli rad etsa — shunday tugmalarsiz qayta yuboradi."""
+    try:
+        return await func(text, reply_markup=kb)
+    except TelegramBadRequest as e:
+        if kb is not None and "PRIVACY" in str(e).upper():
+            return await func(text[: 4096 - len(PRIVACY_NOTE)] + PRIVACY_NOTE, reply_markup=strip_tg_buttons(kb))
+        raise
+
+
 async def edit(call: CallbackQuery, text: str, kb: InlineKeyboardMarkup | None = None) -> None:
     try:
-        await call.message.edit_text(text, reply_markup=kb)
+        await send_with_fallback(call.message.edit_text, text, kb)
     except TelegramBadRequest as e:
         if "not modified" not in str(e):
-            await call.message.answer(text, reply_markup=kb)
+            await send_with_fallback(call.message.answer, text, kb)
     await call.answer()
 
 
@@ -105,11 +136,12 @@ async def user_card(session: AsyncSession, uid: int) -> tuple[str, InlineKeyboar
     u = st.user
     username = f"@{u.username}" if u and u.username else "yo'q"
     lines = [
-        f"👤 {mention(u, uid)}  <i>(ismga bosing — profil ochiladi)</i>",
+        f"👤 {mention(u, uid)}",
         f"🆔 <code>{uid}</code> | {html.escape(username)}",
         "",
         f"📈 Joriy turda: <b>{st.round_count}</b> ta" + (f" — <b>{st.place}-o'rin</b>" if st.place else ""),
         f"📊 Jami qo'shgan: <b>{st.total_count}</b> ta" + (f" (chiqib ketgan: {st.left_count})" if st.left_count else ""),
+        f"🔗 Shundan shaxsiy havola orqali: <b>{st.link_count}</b> ta",
         f"🏆 G'olib bo'lgan: <b>{st.wins}</b> marta" + (" (shu turda ✅)" if st.won_this_round else ""),
         "🤖 Botga start bosgan: " + ("✅ ha" if u and u.started_bot else "❌ yo'q — bot unga yozolmaydi, profiliga kirib o'zingiz yozing"),
     ]
@@ -120,7 +152,6 @@ async def user_card(session: AsyncSession, uid: int) -> tuple[str, InlineKeyboar
     else:
         kb.row(btn("🏆 G'olib deb belgilash", UserCb(action="win", uid=uid)))
     kb.row(btn("👥 Kimlarni qo'shgan", UserCb(action="members", uid=uid)))
-    if u and u.username:
-        kb.row(InlineKeyboardButton(text="💬 Profilga o'tish", url=f"https://t.me/{u.username}"))
+    kb.row(profile_button(u, uid, "💬 Profiliga o'tib yozish"))
     kb.row(btn("⬅️ Reytingga", RatingPage(page=0)), btn("🏠 Menyu", Menu(action="main")))
     return "\n".join(lines), kb.as_markup()

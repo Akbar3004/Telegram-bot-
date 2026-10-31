@@ -5,13 +5,14 @@ from datetime import datetime
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import Addition, Round, Setting, Template, User, Win, utcnow
+from .models import Addition, InviteLink, Round, Setting, Template, User, Win, utcnow
 
 # --- Sozlamalar -------------------------------------------------------------
 
 DEFAULTS = {
     "delete_service": "1",  # "X Y ni qo'shdi" kabi xizmat xabarlarini o'chirish
     "subtract_left": "1",  # Guruhdan chiqib ketgan a'zolar hisobdan ayiriladi
+    "top_enabled": "1",  # Guruhda /top buyrug'i ishlaydi
 }
 
 
@@ -94,7 +95,7 @@ async def list_rounds(s: AsyncSession, chat_id: int, limit: int = 10) -> list[Ro
 
 # --- Qo'shilganlar ----------------------------------------------------------
 
-async def record_addition(s: AsyncSession, chat_id: int, adder_id: int, member_id: int) -> bool:
+async def record_addition(s: AsyncSession, chat_id: int, adder_id: int, member_id: int, source: str = "add") -> bool:
     """A'zo qo'shilishini yozadi. Yangi hisoblangan bo'lsa True qaytaradi.
 
     Bir a'zo guruh bo'yicha faqat BIR marta hisoblanadi (chiqib-qaytib kirish bilan
@@ -111,7 +112,7 @@ async def record_addition(s: AsyncSession, chat_id: int, adder_id: int, member_i
             await s.commit()
         return False
     rnd = await current_round(s, chat_id)
-    s.add(Addition(chat_id=chat_id, round_id=rnd.id, adder_id=adder_id, member_id=member_id))
+    s.add(Addition(chat_id=chat_id, round_id=rnd.id, adder_id=adder_id, member_id=member_id, source=source))
     try:
         await s.commit()
     except Exception:  # bir vaqtda kelgan ikki update (unique cheklov)
@@ -177,6 +178,7 @@ class UserStats:
     round_count: int
     total_count: int
     left_count: int
+    link_count: int
     place: int | None
     wins: int
     won_this_round: bool
@@ -190,6 +192,7 @@ async def user_stats(s: AsyncSession, chat_id: int, user_id: int) -> UserStats:
     total_q = select(func.count(Addition.id)).where(Addition.chat_id == chat_id, Addition.adder_id == user_id)
     total = await s.scalar(total_q.where(Addition.left_at.is_(None)) if subtract else total_q) or 0
     left = await s.scalar(total_q.where(Addition.left_at.is_not(None))) or 0
+    via_link = await s.scalar(total_q.where(Addition.source == "link")) or 0
     wins = await win_count(s, user_id)
     won = await s.scalar(select(Win.id).where(Win.round_id == rnd.id, Win.user_id == user_id)) is not None
     return UserStats(
@@ -197,6 +200,7 @@ async def user_stats(s: AsyncSession, chat_id: int, user_id: int) -> UserStats:
         round_count=me.count if me else 0,
         total_count=total,
         left_count=left,
+        link_count=via_link,
         place=me.place if me else None,
         wins=wins,
         won_this_round=won,
@@ -214,6 +218,21 @@ async def added_members(s: AsyncSession, chat_id: int, adder_id: int, limit: int
     )
     users = {u.id: u for u in await s.scalars(select(User).where(User.id.in_([a.member_id for a in adds])))}
     return [(users.get(a.member_id), a) for a in adds]
+
+
+# --- Shaxsiy taklif havolalari ---------------------------------------------
+
+async def get_invite_link(s: AsyncSession, chat_id: int, owner_id: int) -> str | None:
+    return await s.scalar(select(InviteLink.link).where(InviteLink.chat_id == chat_id, InviteLink.owner_id == owner_id))
+
+
+async def save_invite_link(s: AsyncSession, chat_id: int, owner_id: int, link: str) -> None:
+    s.add(InviteLink(chat_id=chat_id, owner_id=owner_id, link=link))
+    await s.commit()
+
+
+async def link_owner(s: AsyncSession, chat_id: int, link: str) -> int | None:
+    return await s.scalar(select(InviteLink.owner_id).where(InviteLink.chat_id == chat_id, InviteLink.link == link))
 
 
 # --- G'oliblar --------------------------------------------------------------

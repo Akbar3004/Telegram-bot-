@@ -11,8 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...db import repo
 from ...db.models import Template
-from ...utils import PLACEHOLDERS_HELP, mention, render_template
-from .common import NO_GROUP, Menu, PrizeCb, TplCb, UserCb, back_kb, btn, edit, group_id, short_name
+from ...utils import PLACEHOLDERS_HELP, full_name, mention, render_template
+from .common import (
+    NO_GROUP, Menu, PrizeCb, TplCb, UserCb, back_kb, btn, edit, group_id, profile_button, send_with_fallback,
+    short_name,
+)
 from .states import PrizeStates, WriteStates
 
 router = Router(name="admin_prize")
@@ -217,6 +220,7 @@ async def cb_send(call: CallbackQuery, bot: Bot, session: AsyncSession, state: F
     round_id, rows = await current_rows(session)
     by_id = {r.user_id: r for r in rows}
     ok, failed = [], []
+    profiles = []  # (foydalanuvchi, id, yuborildimi)
     for uid in selected:
         user = await session.get(repo.User, uid)
         r = by_id.get(uid)
@@ -227,7 +231,9 @@ async def cb_send(call: CallbackQuery, bot: Bot, session: AsyncSession, state: F
         text = render_template(text_tpl, user=user, user_id=uid, place=r.place if r else None,
                                count=r.count if r else 0, wins=nth)
         line = f"{mention(user, uid)} — {nth}-marta g'olib"
-        if await safe_send(bot, uid, text):
+        delivered = await safe_send(bot, uid, text)
+        profiles.append((user, uid, delivered))
+        if delivered:
             ok.append(line)
         else:
             if user and user.started_bot:
@@ -240,8 +246,14 @@ async def cb_send(call: CallbackQuery, bot: Bot, session: AsyncSession, state: F
         report += ["✅ <b>Yuborildi:</b>"] + [f"• {x}" for x in ok] + [""]
     if failed:
         report += ["❌ <b>Yuborilmadi</b> (botga start bosmagan yoki bloklagan).",
-                   "Ismiga bosib, profiliga kirib o'zingiz yozing:"] + [f"• {x}" for x in failed]
-    await call.message.answer("\n".join(report)[:4000], reply_markup=back_kb())
+                   "Pastdagi tugma orqali profiliga o'tib, o'zingiz yozing:"] + [f"• {x}" for x in failed]
+    kb = InlineKeyboardBuilder()
+    # Avval xabar yetmaganlar, keyin qolganlar — har biriga profil tugmasi
+    for user, uid, delivered in sorted(profiles, key=lambda p: p[2])[:40]:
+        icon = "✅" if delivered else "❌"
+        kb.row(profile_button(user, uid, f"{icon} 💬 {full_name(user, uid)[:28]}"))
+    kb.row(btn("⬅️ Menyu", Menu(action="main")))
+    await send_with_fallback(call.message.answer, "\n".join(report)[:3800], kb.as_markup())
 
 
 # --- Foydalanuvchiga qo'lda yozish (bot orqali) -----------------------------
@@ -270,5 +282,8 @@ async def got_write(message: Message, bot: Bot, session: AsyncSession, state: FS
         result = f"✅ Xabar {mention(user, uid)} ga yuborildi."
     except (TelegramForbiddenError, TelegramBadRequest) as e:
         result = (f"❌ Yuborilmadi: <code>{html.escape(str(e))}</code>\n"
-                  f"Ismiga bosib profiliga o'ting va o'zingiz yozing: {mention(user, uid)}")
-    await message.answer(result, reply_markup=back_kb(UserCb(action="card", uid=uid)))
+                  f"Profiliga o'tib o'zingiz yozing: {mention(user, uid)}")
+    kb = InlineKeyboardBuilder()
+    kb.row(profile_button(user, uid))
+    kb.row(btn("⬅️ Kartaga", UserCb(action="card", uid=uid)))
+    await send_with_fallback(message.answer, result, kb.as_markup())
