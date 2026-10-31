@@ -109,13 +109,15 @@ async def app(scope, receive, send) -> None:
     method = scope.get("method", "GET")
     headers = {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
     query = parse_qs(scope.get("query_string", b"").decode())
+    # Vercel rewrite (vercel.json) yo'lni /api/index ga almashtiradi, shuning uchun marshrut ?route= orqali keladi
+    route = (query.get("route") or [""])[0]
     try:
-        if path.endswith("/webhook") and method == "POST":
+        if (route == "webhook" or path.endswith("/webhook")) and method == "POST":
             status, payload = await handle_webhook(headers, await read_body(receive))
-        elif path.endswith("/setup"):
+        elif route == "setup" or path.endswith("/setup"):
             status, payload = await handle_setup(headers, query)
         else:
-            status, payload = 200, {"ok": True, "service": "telegram-konkurs-bot"}
+            status, payload = 200, {"ok": True, "service": "telegram-konkurs-bot", "path": path, "route": route}
     except Exception as e:
         log.exception("So'rovda xato")
         status, payload = 500, {"ok": False, "error": type(e).__name__}
