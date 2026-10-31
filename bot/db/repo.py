@@ -40,8 +40,13 @@ async def toggle_flag(s: AsyncSession, key: str) -> bool:
     return new
 
 
+UNBOUND = "none"  # guruh ataylab uzilgan (egalik topshirilgan) — GROUP_ID (Vercel) ham hisobga olinmaydi
+
+
 async def get_group_id(s: AsyncSession, fallback: int | None = None) -> int | None:
     value = await get_setting(s, "group_id")
+    if value == UNBOUND:
+        return None
     return int(value) if value else fallback
 
 
@@ -97,19 +102,31 @@ async def create_claim_token(s: AsyncSession) -> str:
     return token
 
 
-async def try_claim(s: AsyncSession, user_id: int, payload: str | None, setup_secret: str | None) -> bool:
-    """/start <payload> orqali ega bo'lish: bir martalik topshirish kodi yoki (ega hali yo'q bo'lsa) WEBHOOK_SECRET."""
+async def try_claim(s: AsyncSession, user_id: int, payload: str | None, setup_secret: str | None) -> str | None:
+    """/start <payload> orqali ega bo'lish. "transfer" — bir martalik topshirish kodi, "setup" — ega hali yo'q
+    bo'lganda WEBHOOK_SECRET bilan birinchi sozlash. Kod mos kelmasa None."""
     if not payload:
-        return False
+        return None
     import hmac
     token = await get_setting(s, "owner_claim") or ""
     if payload.startswith(CLAIM_PREFIX) and token and hmac.compare_digest(payload[len(CLAIM_PREFIX):], token):
         await set_owner(s, user_id)
-        return True
+        return "transfer"
     if setup_secret and await get_owner(s) is None and hmac.compare_digest(payload, setup_secret):
         await set_owner(s, user_id)
-        return True
-    return False
+        return "setup"
+    return None
+
+
+async def reset_for_transfer(s: AsyncSession, fallback_group: int | None) -> int | None:
+    """Egalik topshirilganda: avvalgi guruh bog'lanishi uziladi va avvalgi yordamchi adminlar o'chiriladi.
+    Yangi ega o'z guruhini /bind bilan ulaydi. Avvalgi guruh ID'sini qaytaradi (bot undan chiqishi uchun)."""
+    old_group = await get_group_id(s, fallback_group)
+    await set_setting(s, "group_id", UNBOUND)
+    await set_setting(s, "admin_ids", "")
+    for key in ("last_top_msg", "last_top_at"):
+        await set_setting(s, key, "")
+    return old_group
 
 
 # --- Foydalanuvchilar -------------------------------------------------------

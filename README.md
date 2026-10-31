@@ -63,6 +63,8 @@ Post ko'rishlar sonini Telegram botlarga guruh xabarlari uchun bermaydi.
   (kontakt tanlash, xabarini forward qilish yoki ID yozish orqali) yoki olib tashlaydi.
 - **Egalikni topshirish** (botni sotish): bot bir martalik havola yaratadi. Uni bosgan odam ega bo'ladi,
   avvalgi ega esa adminlikdan chiqadi.
+  Bot avvalgi egasining guruhidan chiqadi va undan uziladi, yordamchi adminlar ham o'chiriladi.
+  Yangi ega botni o'z guruhiga admin qilib qo'shadi va `/bind` yozadi.
 - `ADMIN_IDS` (Vercel) ixtiyoriy: undagilar har doim ega huquqiga ega. Botni sotsangiz, uni olib tashlang.
 
 **Oddiy foydalanuvchi** `/start` bosganda pastda doim turadigan **"📊 Natijam"** va

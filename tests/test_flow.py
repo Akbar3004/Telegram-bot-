@@ -413,8 +413,29 @@ async def test_owner_claim_admins_and_transfer(env):
     token = link_text.split("start=")[1].split("<")[0]
     assert token.startswith("own_")
     await env.private(99, f"/start {token}")
-    assert "Admin panel" in env.fake.sent(SendMessage, chat_id=99)[-1].text
-    assert "ga o'tdi" in env.fake.sent(SendMessage, chat_id=77)[-1].text
+    greet, panel = env.fake.sent(SendMessage, chat_id=99)[-2:]
+    assert "o'z guruhingizni ulang" in greet.text and "Guruh ulanmagan" in panel.text
+    notice = env.fake.sent(SendMessage, chat_id=77)[-1].text
+    assert "ga o'tdi" in notice and "guruhingizdan chiqdi" in notice
+    # Bot sotuvchining guruhidan chiqdi, bog'lanish uzildi, yordamchi adminlar o'chirildi
+    from aiogram.methods import LeaveChat
+    assert [c.chat_id for c in env.fake.sent(LeaveChat)] == [GROUP.id]
+    async with env.sm() as s:
+        assert await repo.get_group_id(s, GROUP.id) is None  # GROUP_ID (Vercel) ham hisobga olinmaydi
+        assert await repo.get_admins(s) == []
+    await env.private(88, "/start")  # sotuvchining yordamchi admini endi oddiy foydalanuvchi
+    assert "Admin panel" not in last_text(env.fake)
+    # Sotuvchining guruhidagi hodisalar endi hisoblanmaydi
+    await env.add(10, 777)
+    async with env.sm() as s:
+        assert (await repo.user_stats(s, GROUP.id, 10)).round_count == 0
+
+    # Yangi ega o'z guruhini /bind bilan ulaydi
+    own = Chat(id=-3003, type="supergroup", title="Yangi egasining guruhi")
+    await env.feed(message=Message(message_id=6000, date=NOW, chat=own, from_user=user(99), text="/bind",
+                                   entities=[{"type": "bot_command", "offset": 0, "length": 5}]))
+    async with env.sm() as s:
+        assert await repo.get_group_id(s) == own.id
     await env.private(77, "/start")  # eski ega endi oddiy foydalanuvchi
     assert "Sizning natijangiz" in last_text(env.fake)
     await env.private(100, f"/start {token}")  # havola ikkinchi marta ishlamaydi

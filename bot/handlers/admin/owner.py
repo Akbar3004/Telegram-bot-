@@ -1,5 +1,6 @@
 """Ega va adminlar: admin qo'shish/olib tashlash va egalikni bir martalik havola bilan topshirish."""
 import html
+import logging
 
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
@@ -17,6 +18,7 @@ from ...utils import mention
 from .common import ADMIN_KB, Menu, UserCb, btn, edit, main_menu
 from .states import AdminStates
 
+log = logging.getLogger(__name__)
 router = Router(name="admin_owner")
 PICK_REQUEST_ID = 1
 BTN_CANCEL = "❌ Bekor qilish"
@@ -39,24 +41,52 @@ async def is_owner(session: AsyncSession, uid: int) -> bool:
 # --- Egalikni olish (/start <kod>) — admin va oddiy foydalanuvchi /start'idan chaqiriladi ----------
 
 async def claim_and_greet(message: Message, bot: Bot, session: AsyncSession, payload: str | None) -> bool:
+    settings = get_settings()
     old_owner = await repo.get_owner(session)
-    if not await repo.try_claim(session, message.from_user.id, payload, get_settings().webhook_secret):
+    old_admins = await repo.get_admins(session)
+    kind = await repo.try_claim(session, message.from_user.id, payload, settings.webhook_secret)
+    if kind is None:
         return False
     uid = message.from_user.id
     await repo.upsert_user(session, message.from_user, started=True)
     await set_admin_commands(bot, uid)
-    await message.answer("👑 <b>Siz endi botning egasisiz!</b>\n\n"
-                         "Konkursni boshqarish, adminlar qo'shish va guruh statistikasini ko'rish sizga ochiq.",
-                         reply_markup=ADMIN_KB)
+
+    old_group = None
+    if kind == "transfer":
+        # Bot avvalgi egasining guruhidan to'liq uziladi — yangi ega unga kira olmaydi
+        old_group = await repo.reset_for_transfer(session, settings.group_id)
+        if old_group is not None:
+            try:
+                await bot.leave_chat(old_group)
+            except (TelegramBadRequest, TelegramForbiddenError) as e:
+                log.warning("Avvalgi guruhdan chiqib bo'lmadi: %s", e)
+        for aid in old_admins:
+            await reset_commands(bot, aid)
+
+    greet = "👑 <b>Siz endi botning egasisiz!</b>\n\n"
+    if kind == "transfer":
+        greet += ("Endi o'z guruhingizni ulang:\n"
+                  "1. Botni guruhingizga qo'shing va <b>admin</b> qiling (xabarlarni o'chirish va foydalanuvchilarni "
+                  "taklif qilish huquqlari bilan).\n"
+                  "2. Guruhda <code>/bind</code> deb yozing.\n\n"
+                  "Shundan so'ng konkurs, reyting va statistika sizning guruhingiz bo'yicha ishlaydi.")
+    else:
+        greet += "Konkursni boshqarish, adminlar qo'shish va guruh statistikasini ko'rish sizga ochiq."
+    await message.answer(greet, reply_markup=ADMIN_KB)
     text, kb = await main_menu(session)
     await message.answer(text, reply_markup=kb)
-    if old_owner and old_owner != uid:
-        await reset_commands(bot, old_owner)
-        try:
-            await bot.send_message(old_owner, f"🔁 Bot egaligi {mention(await session.get(repo.User, uid), uid)} ga "
-                                              "o'tdi. Siz endi admin emassiz.")
-        except (TelegramBadRequest, TelegramForbiddenError):
-            pass
+
+    if kind == "transfer":
+        notice = (f"🔁 Bot egaligi {mention(await session.get(repo.User, uid), uid)} ga o'tdi. Siz endi admin emassiz."
+                  + ("\n🚪 Bot sizning guruhingizdan chiqdi — yangi ega unga kira olmaydi." if old_group else ""))
+        notify = [old_owner] if old_owner and old_owner != uid else [a for a in settings.admin_ids if a != uid]
+        for target in notify:
+            if old_owner == target:
+                await reset_commands(bot, target)
+            try:
+                await bot.send_message(target, notice)
+            except (TelegramBadRequest, TelegramForbiddenError):
+                pass
     return True
 
 
@@ -188,8 +218,10 @@ async def cb_transfer(call: CallbackQuery, session: AsyncSession) -> None:
                "Bot bir martalik maxfiy havola yaratadi. Uni yangi egaga yuborasiz — u havolani bosib "
                "botga /start bosgan zahoti <b>ega bo'ladi</b>, siz esa adminlikdan chiqasiz.\n\n"
                "• Havola faqat bir marta ishlaydi.\n"
+               "• Bot sizning guruhingizdan chiqadi va undan uziladi — yangi ega o'z guruhini ulaydi.\n"
+               "• Yordamchi adminlaringiz ham o'chiriladi.\n"
                "• Yangi havola yaratilsa yoki bekor qilinsa, eskisi ishlamaydi.\n"
-               "• Konkurs ma'lumotlari, reyting va tarix saqlanib qoladi.",
+               "• Shablonlar saqlanib qoladi; sizning guruhingiz reytingi yangi egaga ko'rinmaydi.",
                kb.as_markup())
 
 
