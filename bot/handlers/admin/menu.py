@@ -12,10 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ...db import repo
 from ...db.models import Win
 from ...utils import full_name, mention
-from . import ai_post
 from .common import (
-    ADMIN_KB, BTN_AI, BTN_CONTEST, HOME_TEXT, NO_GROUP, PAGE_SIZE, Menu, RatingPage, UserCb, back_kb, btn, edit,
-    group_id, main_menu,
+    NO_GROUP, PAGE_SIZE, Menu, RatingPage, UserCb, back_kb, btn, edit, group_id, main_menu,
     profile_button, rating_line, short_name, user_card,
 )
 
@@ -27,33 +25,8 @@ router = Router(name="admin_menu")
 async def cmd_start(message: Message, session: AsyncSession, state: FSMContext) -> None:
     await state.clear()
     await repo.upsert_user(session, message.from_user, started=True)
-    await message.answer(
-        "👋 <b>Assalomu alaykum!</b>\n\n"
-        "🏆 <b>Konkurs</b> — reyting, konkurs sharti, g'oliblar va mukofotlar.\n"
-        "🎨 <b>AI post</b> — kiyim rasmini yuborasiz, AI uni chiroyli mahsulot rasmiga aylantiradi "
-        "va guruhga joylaysiz.\n\n" + HOME_TEXT,
-        reply_markup=ADMIN_KB,
-    )
-
-
-# Pastdagi tugmalar har qanday dialog holatida ham ishlaydi (shu router birinchi turadi)
-@router.message(F.text == BTN_CONTEST)
-async def btn_contest(message: Message, session: AsyncSession, state: FSMContext) -> None:
-    await state.clear()
     text, kb = await main_menu(session)
     await message.answer(text, reply_markup=kb)
-
-
-@router.message(F.text == BTN_AI)
-async def btn_ai(message: Message, state: FSMContext) -> None:
-    text, kb = await ai_post.start(state)
-    await message.answer(text, reply_markup=kb)
-
-
-@router.callback_query(Menu.filter(F.action == "home"))
-async def cb_home(call: CallbackQuery, state: FSMContext) -> None:
-    await state.clear()
-    await edit(call, HOME_TEXT)
 
 
 @router.callback_query(Menu.filter(F.action == "main"))

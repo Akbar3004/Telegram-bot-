@@ -15,11 +15,6 @@ class WriteStates(StatesGroup):
     message = State()
 
 
-class AiStates(StatesGroup):
-    photo = State()
-    caption = State()
-
-
 class RuleStates(StatesGroup):
     deadline = State()
     top = State()

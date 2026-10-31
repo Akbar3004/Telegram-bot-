@@ -14,14 +14,6 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///data/bot.db"
     # Webhook (Vercel) rejimi uchun maxfiy kalit: Telegram so'rovlarini tekshirish va /api/setup ni himoyalash
     webhook_secret: str | None = None
-    # AI post: Google AI Studio'dan olingan Gemini API kaliti va rasm modeli
-    gemini_api_key: str | None = None
-    gemini_image_model: str = "gemini-2.5-flash-image"
-    # AI post: OpenAI (ChatGPT) API kaliti va rasm modeli
-    openai_api_key: str | None = None
-    openai_image_model: str = "gpt-image-2"
-    # "openai" yoki "gemini". Bo'sh bo'lsa — kaliti bor xizmat (ikkalasi bo'lsa ChatGPT)
-    ai_provider: str | None = None
 
     @field_validator("webhook_secret", mode="before")
     @classmethod

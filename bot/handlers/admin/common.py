@@ -2,7 +2,7 @@ import html
 
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters.callback_data import CallbackData
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,11 +34,6 @@ class TplCb(CallbackData, prefix="t"):
 class PrizeCb(CallbackData, prefix="p"):
     action: str
     value: int = 0
-
-
-class AiCb(CallbackData, prefix="ai"):
-    action: str
-    style: str = ""
 
 
 def btn(text: str, cb: CallbackData | str) -> InlineKeyboardButton:
@@ -112,22 +107,10 @@ def short_name(row: repo.RatingRow, limit: int = 22) -> str:
     return name if len(name) <= limit else name[: limit - 1] + "…"
 
 
-# Admin uchun yozish maydoni ostida doim turadigan ikkita tugma
-BTN_CONTEST = "🏆 Konkurs"
-BTN_AI = "🎨 AI post"
-ADMIN_KB = ReplyKeyboardMarkup(
-    keyboard=[[KeyboardButton(text=BTN_CONTEST), KeyboardButton(text=BTN_AI)]],
-    resize_keyboard=True,
-    is_persistent=True,
-)
-HOME_TEXT = "👇 Pastdagi tugmalardan birini tanlang: <b>🏆 Konkurs</b> yoki <b>🎨 AI post</b>."
-
-
 async def main_menu(session: AsyncSession) -> tuple[str, InlineKeyboardMarkup]:
     gid = await group_id(session)
     if gid is None:
-        return NO_GROUP, InlineKeyboardMarkup(inline_keyboard=[[btn("🔄 Tekshirish", Menu(action="main"))],
-                                                               [btn("🏠 Bosh menyu", Menu(action="home"))]])
+        return NO_GROUP, InlineKeyboardMarkup(inline_keyboard=[[btn("🔄 Tekshirish", Menu(action="main"))]])
     rnd = await repo.current_round(session, gid)
     rows = await repo.round_rating(session, rnd)
     total = sum(r.count for r in rows)
@@ -150,7 +133,6 @@ async def main_menu(session: AsyncSession) -> tuple[str, InlineKeyboardMarkup]:
     kb.row(btn("📝 Shablonlar", TplCb(action="list")), btn("🏆 G'oliblar tarixi", Menu(action="history")))
     kb.row(btn("🔄 Yangi tur", Menu(action="newround")), btn("⚙️ Sozlamalar", Menu(action="settings")))
     kb.row(btn("📥 Excel (CSV)", Menu(action="export")), btn("♻️ Yangilash", Menu(action="main")))
-    kb.row(btn("🏠 Bosh menyu", Menu(action="home")))
     return "\n".join(lines), kb.as_markup()
 
 
