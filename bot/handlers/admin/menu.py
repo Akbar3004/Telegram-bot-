@@ -1,8 +1,8 @@
 import csv
 import io
 
-from aiogram import F, Router
-from aiogram.filters import Command, CommandStart
+from aiogram import Bot, F, Router
+from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -12,8 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ...db import repo
 from ...db.models import Win
 from ...utils import full_name, mention
+from . import group_stats, owner
 from .common import (
-    NO_GROUP, PAGE_SIZE, Menu, RatingPage, UserCb, back_kb, btn, edit, group_id, main_menu,
+    ADMIN_KB, BTN_CONTEST, BTN_STATS, NO_GROUP, PAGE_SIZE, Menu, RatingPage, UserCb, back_kb, btn, edit, group_id, main_menu,
     profile_button, rating_line, short_name, user_card,
 )
 
@@ -22,10 +23,29 @@ router = Router(name="admin_menu")
 
 @router.message(CommandStart())
 @router.message(Command("menu"))
-async def cmd_start(message: Message, session: AsyncSession, state: FSMContext) -> None:
+async def cmd_start(message: Message, command: CommandObject, bot: Bot, session: AsyncSession, state: FSMContext) -> None:
     await state.clear()
+    if await owner.claim_and_greet(message, bot, session, command.args):
+        return
     await repo.upsert_user(session, message.from_user, started=True)
+    await message.answer(f"👋 Pastdagi tugmalar: <b>{BTN_CONTEST}</b> — konkurs paneli, "
+                         f"<b>{BTN_STATS}</b> — guruh haqida to'liq ma'lumot.", reply_markup=ADMIN_KB)
     text, kb = await main_menu(session)
+    await message.answer(text, reply_markup=kb)
+
+
+# Pastdagi tugmalar har qanday dialog holatida ham ishlaydi (shu router birinchi turadi)
+@router.message(F.text == BTN_CONTEST)
+async def btn_contest(message: Message, session: AsyncSession, state: FSMContext) -> None:
+    await state.clear()
+    text, kb = await main_menu(session)
+    await message.answer(text, reply_markup=kb)
+
+
+@router.message(F.text == BTN_STATS)
+async def btn_stats(message: Message, bot: Bot, session: AsyncSession, state: FSMContext) -> None:
+    await state.clear()
+    text, kb = await group_stats.stats_view(bot, session)
     await message.answer(text, reply_markup=kb)
 
 

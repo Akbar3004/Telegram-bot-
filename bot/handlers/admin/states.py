@@ -15,6 +15,10 @@ class WriteStates(StatesGroup):
     message = State()
 
 
+class AdminStates(StatesGroup):
+    add = State()
+
+
 class RuleStates(StatesGroup):
     deadline = State()
     top = State()

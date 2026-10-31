@@ -45,6 +45,73 @@ async def get_group_id(s: AsyncSession, fallback: int | None = None) -> int | No
     return int(value) if value else fallback
 
 
+# --- Ega va adminlar --------------------------------------------------------
+# Ega va adminlar bazada saqlanadi — botni boshqa odamga topshirishda kodga yoki Vercel'ga kirish shart emas.
+# ADMIN_IDS (Vercel) ixtiyoriy zaxira "super-admin" bo'lib qoladi.
+
+CLAIM_PREFIX = "own_"
+
+
+async def get_owner(s: AsyncSession) -> int | None:
+    value = await get_setting(s, "owner_id")
+    return int(value) if value else None
+
+
+async def get_admins(s: AsyncSession) -> list[int]:
+    value = await get_setting(s, "admin_ids") or ""
+    return [int(x) for x in value.split(",") if x]
+
+
+async def _save_admins(s: AsyncSession, ids: list[int]) -> None:
+    await set_setting(s, "admin_ids", ",".join(str(i) for i in dict.fromkeys(ids)))
+
+
+async def is_owner(s: AsyncSession, user_id: int, env_admins: list[int]) -> bool:
+    return user_id in env_admins or user_id == await get_owner(s)
+
+
+async def is_admin(s: AsyncSession, user_id: int, env_admins: list[int]) -> bool:
+    return await is_owner(s, user_id, env_admins) or user_id in await get_admins(s)
+
+
+async def add_admin(s: AsyncSession, user_id: int) -> None:
+    await _save_admins(s, await get_admins(s) + [user_id])
+
+
+async def remove_admin(s: AsyncSession, user_id: int) -> None:
+    await _save_admins(s, [i for i in await get_admins(s) if i != user_id])
+
+
+async def set_owner(s: AsyncSession, user_id: int) -> None:
+    """Yangi ega. Avvalgi ega adminlikdan ham chiqadi; yangi ega yordamchi adminlar ro'yxatida bo'lsa — olib tashlanadi."""
+    await set_setting(s, "owner_id", str(user_id))
+    await set_setting(s, "owner_claim", "")
+    await remove_admin(s, user_id)
+
+
+async def create_claim_token(s: AsyncSession) -> str:
+    """Egalikni topshirish uchun bir martalik kod (eskisi bekor bo'ladi)."""
+    import secrets
+    token = secrets.token_urlsafe(24)
+    await set_setting(s, "owner_claim", token)
+    return token
+
+
+async def try_claim(s: AsyncSession, user_id: int, payload: str | None, setup_secret: str | None) -> bool:
+    """/start <payload> orqali ega bo'lish: bir martalik topshirish kodi yoki (ega hali yo'q bo'lsa) WEBHOOK_SECRET."""
+    if not payload:
+        return False
+    import hmac
+    token = await get_setting(s, "owner_claim") or ""
+    if payload.startswith(CLAIM_PREFIX) and token and hmac.compare_digest(payload[len(CLAIM_PREFIX):], token):
+        await set_owner(s, user_id)
+        return True
+    if setup_secret and await get_owner(s) is None and hmac.compare_digest(payload, setup_secret):
+        await set_owner(s, user_id)
+        return True
+    return False
+
+
 # --- Foydalanuvchilar -------------------------------------------------------
 
 async def upsert_user(s: AsyncSession, tg_user, started: bool = False, commit: bool = True) -> User:

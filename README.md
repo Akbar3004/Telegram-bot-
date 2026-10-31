@@ -48,6 +48,23 @@ va adminga reyting, g'oliblarga mukofot xabarini yuborish hamda g'oliblar tarixi
 - **G'oliblar tarixi:** har bir turda kim, nechanchi o'rin bilan va **nechanchi marta** g'olib bo'lgani.
 - **Excel (CSV)** eksport.
 
+**Admin tugmalari:** admin `/start` bosganda yozish maydoni ostida **🏆 Konkurs** (admin panel) va
+**📈 Guruh statistikasi** tugmalari doim turadi.
+
+**📈 Guruh statistikasi:** hozirgi a'zolar soni, kuzatuv boshlanganidan beri chiqib ketganlar soni,
+joriy oy bilan o'tgan oyning taqqoslanishi (qo'shilganlar, chiqib ketganlar, sof o'sish, kunlik o'rtacha
+qo'shilish va chiqish, oy boshidagi a'zolar soni). Statistika bot ulanganidan keyin yig'ila boshlaydi.
+Post ko'rishlar sonini Telegram botlarga guruh xabarlari uchun bermaydi.
+
+**👥 Ega va adminlar** (kod va Vercel'ga kirmasdan, botning o'zida):
+- **Birinchi ega:** botga `https://t.me/<bot>?start=<WEBHOOK_SECRET>` havolasi orqali `/start` bosgan
+  odam ega bo'ladi. Bu faqat ega hali belgilanmagan bo'lsa ishlaydi.
+- **Adminlar:** admin panel → "👥 Adminlar va egalik" bo'limida ega yordamchi admin qo'shadi
+  (kontakt tanlash, xabarini forward qilish yoki ID yozish orqali) yoki olib tashlaydi.
+- **Egalikni topshirish** (botni sotish): bot bir martalik havola yaratadi. Uni bosgan odam ega bo'ladi,
+  avvalgi ega esa adminlikdan chiqadi.
+- `ADMIN_IDS` (Vercel) ixtiyoriy: undagilar har doim ega huquqiga ega. Botni sotsangiz, uni olib tashlang.
+
 **Oddiy foydalanuvchi** `/start` bosganda pastda doim turadigan **"📊 Natijam"** va
 **"🔗 Taklif havolam"** tugmalari chiqadi. Natijada hisobi, qo'shganlari va guruhni tark etganlar soni,
 o'rni, g'oliblik soni, konkurs sharti va shartgacha nechta qolgani ko'rinadi.
@@ -84,7 +101,7 @@ Supabase yoki boshqa PostgreSQL ham ishlaydi.
 | Nomi | Qiymati |
 |---|---|
 | `BOT_TOKEN` | BotFather bergan token |
-| `ADMIN_IDS` | Adminlar ID'si, vergul bilan: `111111111,222222222` |
+| `ADMIN_IDS` | (ixtiyoriy) Super-adminlar ID'si, vergul bilan: `111111111,222222222`. Ega va adminlarni botning o'zida ham belgilash mumkin |
 | `WEBHOOK_SECRET` | 16+ belgili tasodifiy kalit (A-Z, a-z, 0-9, `_`, `-`) |
 | `DATABASE_URL` | 3-qadamdagi baza havolasi |
 | `GROUP_ID` | (ixtiyoriy) guruh ID'si, bo'sh qoldirsangiz guruhda `/bind` yozasiz |

@@ -5,7 +5,7 @@ import pytest
 from aiogram import Bot, Dispatcher
 from aiogram.client.session.base import BaseSession
 from aiogram.methods import (
-    CreateChatInviteLink, GetMe,
+    CreateChatInviteLink, GetChatMemberCount, GetMe,
     CopyMessage, DeleteMessage, EditMessageText,
     GetChatMember, SendDocument, SendMessage, TelegramMethod,
 )
@@ -36,6 +36,7 @@ class FakeSession(BaseSession):
         self.blocked: set[int] = set()
         self.privacy_restricted: set[int] = set()  # tg://user?id= tugmasini rad etadigan foydalanuvchilar
         self.links = 0
+        self.member_count = 120
 
     async def make_request(self, bot, method, timeout=None):
         self.calls.append(method)
@@ -59,6 +60,8 @@ class FakeSession(BaseSession):
             return ChatMemberAdministrator.model_construct(user=user(42), status="administrator", can_delete_messages=True)
         if isinstance(method, CopyMessage):
             return MessageId(message_id=1)
+        if isinstance(method, GetChatMemberCount):
+            return self.member_count
         if isinstance(method, (SendMessage, SendDocument, EditMessageText)):
             return Message(message_id=1, date=NOW, chat=Chat(id=getattr(method, "chat_id", 0) or 0, type="private"),
                            text=getattr(method, "text", None))
@@ -121,9 +124,9 @@ async def env(sessionmaker):
                                    from_user=user(uid), text=text,
                                    entities=[{"type": "bot_command", "offset": 0, "length": len(text)}] if text.startswith("/") else None))
 
-    async def click(data):
-        msg = Message(message_id=999, date=NOW, chat=Chat(id=ADMIN, type="private"), text="x")
-        await feed(callback_query=CallbackQuery(id=str(next(counter)), from_user=user(ADMIN), chat_instance="c",
+    async def click(data, uid: int = ADMIN):
+        msg = Message(message_id=999, date=NOW, chat=Chat(id=uid, type="private"), text="x")
+        await feed(callback_query=CallbackQuery(id=str(next(counter)), from_user=user(uid), chat_instance="c",
                                                 message=msg, data=data if isinstance(data, str) else data.pack()))
 
     ns = type("Env", (), {})()
@@ -364,3 +367,88 @@ async def test_profile_buttons_and_privacy_fallback(env):
     edits = env.fake.sent(EditMessageText)
     assert "maxfiylik" in edits[-1].text
     assert not any((b.url or "").startswith("tg://") for row in edits[-1].reply_markup.inline_keyboard for b in row)
+
+
+async def test_owner_claim_admins_and_transfer(env):
+    from aiogram.methods import AnswerCallbackQuery
+    from aiogram.types import SharedUser, UsersShared
+    from bot.config import get_settings
+    secret = get_settings().webhook_secret
+    await env.bind()
+
+    # Ega hali yo'q: begona odam oddiy /start bossa — admin emas
+    await env.private(77, "/start")
+    assert "Sizning natijangiz" in last_text(env.fake)
+    await env.private(77, "/start wrong")
+    assert "egasisiz" not in last_text(env.fake)
+    # Birinchi sozlash: WEBHOOK_SECRET bilan /start — ega bo'ladi va admin panel ochiladi
+    await env.private(77, f"/start {secret}")
+    msgs = env.fake.sent(SendMessage, chat_id=77)
+    assert "Siz endi botning egasisiz" in msgs[-2].text and "Admin panel" in msgs[-1].text
+    # Ega bor — sir bilan boshqa odam ega bo'la olmaydi
+    await env.private(55, f"/start {secret}")
+    assert "egasisiz" not in last_text(env.fake)
+
+    # Ega admin qo'shadi: ID orqali va kontakt tanlash orqali
+    await env.click(Menu(action="admins"), uid=77)
+    await env.click(Menu(action="admin_add"), uid=77)
+    await env.private(77, "88")
+    assert "admin qilindi" in "".join(m.text for m in env.fake.sent(SendMessage, chat_id=77)[-3:])
+    await env.click(Menu(action="admin_add"), uid=77)
+    await env.feed(message=Message(message_id=5000, date=NOW, chat=Chat(id=77, type="private"), from_user=user(77),
+                                   users_shared=UsersShared(request_id=1, users=[SharedUser(user_id=89, first_name="Vali")])))
+    async with env.sm() as s:
+        assert await repo.get_admins(s) == [88, 89]
+    await env.private(88, "/start")
+    assert "Admin panel" in last_text(env.fake)
+    # Yordamchi admin egalik bo'limiga kira olmaydi
+    await env.click(Menu(action="transfer_ok"), uid=88)
+    assert env.fake.sent(AnswerCallbackQuery)[-1].show_alert
+    async with env.sm() as s:
+        assert not await repo.get_setting(s, "owner_claim")
+
+    # Egalikni topshirish: bir martalik havola
+    await env.click(Menu(action="transfer_ok"), uid=77)
+    link_text = last_text(env.fake)
+    token = link_text.split("start=")[1].split("<")[0]
+    assert token.startswith("own_")
+    await env.private(99, f"/start {token}")
+    assert "Admin panel" in env.fake.sent(SendMessage, chat_id=99)[-1].text
+    assert "ga o'tdi" in env.fake.sent(SendMessage, chat_id=77)[-1].text
+    await env.private(77, "/start")  # eski ega endi oddiy foydalanuvchi
+    assert "Sizning natijangiz" in last_text(env.fake)
+    await env.private(100, f"/start {token}")  # havola ikkinchi marta ishlamaydi
+    assert "Sizning natijangiz" in last_text(env.fake)
+    async with env.sm() as s:
+        assert await repo.get_owner(s) == 99
+
+
+async def test_admin_keyboard_and_group_stats(env):
+    from datetime import timedelta
+    from bot.db import stats
+    from bot.db.models import MemberEvent, utcnow
+
+    await env.bind()
+    await env.add(10, 100)
+    await env.add(10, 101)
+    await env.join_link(102, "https://t.me/+NOBODY")  # o'zi kirgan ham statistikaga kiradi
+    await env.leave(101)
+    # O'tgan oy uchun tarix
+    async with env.sm() as s:
+        prev = stats._utc(stats.prev_month_start(stats.local_today())) + timedelta(days=2)
+        s.add_all([MemberEvent(chat_id=GROUP.id, user_id=500 + i, kind="join", at=prev) for i in range(6)])
+        s.add(MemberEvent(chat_id=GROUP.id, user_id=600, kind="leave", at=prev))
+        await s.commit()
+
+    await env.private(ADMIN, "/start")
+    kb = env.fake.sent(SendMessage, chat_id=ADMIN)[-2].reply_markup
+    assert [b.text for b in kb.keyboard[0]] == ["🏆 Konkurs", "📈 Guruh statistikasi"] and kb.is_persistent
+
+    await env.private(ADMIN, "📈 Guruh statistikasi")
+    text = last_text(env.fake)
+    assert "Hozir a'zolar: <b>120</b>" in text
+    assert "Qo'shilganlar: <b>3</b> | 6" in text and "Chiqib ketganlar: <b>1</b> | 1" in text
+    assert "Sof o'sish: <b>+2</b> | +5" in text and "ko'rishlar sonini bermaydi" in text
+
+    await env.private(ADMIN, "🏆 Konkurs")
+    assert "Admin panel" in last_text(env.fake)

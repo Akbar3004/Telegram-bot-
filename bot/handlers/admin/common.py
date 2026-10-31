@@ -2,7 +2,7 @@ import html
 
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters.callback_data import CallbackData
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -107,6 +107,16 @@ def short_name(row: repo.RatingRow, limit: int = 22) -> str:
     return name if len(name) <= limit else name[: limit - 1] + "…"
 
 
+# Admin uchun yozish maydoni ostida doim turadigan ikkita tugma
+BTN_CONTEST = "🏆 Konkurs"
+BTN_STATS = "📈 Guruh statistikasi"
+ADMIN_KB = ReplyKeyboardMarkup(
+    keyboard=[[KeyboardButton(text=BTN_CONTEST), KeyboardButton(text=BTN_STATS)]],
+    resize_keyboard=True,
+    is_persistent=True,
+)
+
+
 async def main_menu(session: AsyncSession) -> tuple[str, InlineKeyboardMarkup]:
     gid = await group_id(session)
     if gid is None:
@@ -133,6 +143,7 @@ async def main_menu(session: AsyncSession) -> tuple[str, InlineKeyboardMarkup]:
     kb.row(btn("📝 Shablonlar", TplCb(action="list")), btn("🏆 G'oliblar tarixi", Menu(action="history")))
     kb.row(btn("🔄 Yangi tur", Menu(action="newround")), btn("⚙️ Sozlamalar", Menu(action="settings")))
     kb.row(btn("📥 Excel (CSV)", Menu(action="export")), btn("♻️ Yangilash", Menu(action="main")))
+    kb.row(btn("👥 Adminlar va egalik", Menu(action="admins")))
     return "\n".join(lines), kb.as_markup()
 
 

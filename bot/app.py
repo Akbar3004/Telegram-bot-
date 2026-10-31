@@ -4,8 +4,8 @@ import logging
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.types import BotCommand, BotCommandScopeChat
 
+from .commands import setup_bot_commands  # noqa: F401 (webhook.py va __main__ shu yerdan oladi)
 from .config import get_settings
 from .db.fsm_storage import DbStorage
 from .handlers import setup_routers
@@ -26,20 +26,3 @@ def create_dispatcher() -> Dispatcher:
     dp.update.outer_middleware(DbSessionMiddleware())
     dp.include_router(setup_routers())
     return dp
-
-
-async def setup_bot_commands(bot: Bot) -> None:
-    await bot.set_my_commands([
-        BotCommand(command="start", description="Boshlash"),
-        BotCommand(command="natija", description="Natijamni ko'rish"),
-        BotCommand(command="link", description="Shaxsiy taklif havolam"),
-    ])
-    for admin_id in get_settings().admin_ids:
-        try:
-            await bot.set_my_commands(
-                [BotCommand(command="start", description="Admin panel / reyting"),
-                 BotCommand(command="link", description="Shaxsiy taklif havolam")],
-                scope=BotCommandScopeChat(chat_id=admin_id),
-            )
-        except Exception as e:  # admin hali botga start bosmagan bo'lishi mumkin
-            log.warning("Admin %s uchun buyruqlarni o'rnatib bo'lmadi: %s", admin_id, e)

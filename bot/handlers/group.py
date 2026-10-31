@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import board
 from ..config import get_settings
-from ..db import repo
+from ..db import repo, stats
 from ..filters import IsAdmin
 
 log = logging.getLogger(__name__)
@@ -65,7 +65,7 @@ async def bot_added(event: ChatMemberUpdated, bot: Bot, session: AsyncSession) -
     """Botni admin guruhga qo'shsa va guruh hali ulanmagan bo'lsa — avtomatik ulanadi."""
     if event.chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
         return
-    if event.from_user.id not in get_settings().admin_ids:
+    if not await repo.is_admin(session, event.from_user.id, get_settings().admin_ids):
         return
     if await repo.get_group_id(session, get_settings().group_id) is None:
         await bind_group(bot, session, event.chat.id, event.chat.title, event.from_user.id)
@@ -73,8 +73,18 @@ async def bot_added(event: ChatMemberUpdated, bot: Bot, session: AsyncSession) -
 
 # --- A'zolar qo'shilishi (chat_member update — eng ishonchli manba) -----------
 
+async def track(bot: Bot, session: AsyncSession, chat_id: int, user_id: int, kind: str) -> None:
+    """Statistika: kirish/chiqishni yozadi va a'zolar sonini kuniga bir marta saqlaydi."""
+    await stats.record_event(session, chat_id, user_id, kind)
+    if not await stats.has_snapshot_today(session, chat_id):
+        try:
+            await stats.save_snapshot(session, chat_id, await bot.get_chat_member_count(chat_id))
+        except (TelegramBadRequest, TelegramForbiddenError) as e:
+            log.warning("A'zolar sonini olib bo'lmadi: %s", e)
+
+
 @router.chat_member(ChatMemberUpdatedFilter(JOIN_TRANSITION))
-async def member_joined(event: ChatMemberUpdated, session: AsyncSession) -> None:
+async def member_joined(event: ChatMemberUpdated, bot: Bot, session: AsyncSession) -> None:
     if not await is_target_group(session, event.chat.id):
         return
     member = event.new_chat_member.user
@@ -83,6 +93,7 @@ async def member_joined(event: ChatMemberUpdated, session: AsyncSession) -> None
     await repo.upsert_user(session, actor)
     if member.is_bot:
         return
+    await track(bot, session, event.chat.id, member.id, "join")
     # Shaxsiy taklif havolasi orqali kirgan bo'lsa — havola egasiga hisoblanadi
     if event.invite_link is not None:
         owner = await repo.link_owner(session, event.chat.id, event.invite_link.invite_link)
@@ -106,9 +117,11 @@ async def member_joined(event: ChatMemberUpdated, session: AsyncSession) -> None
 
 
 @router.chat_member(ChatMemberUpdatedFilter(LEAVE_TRANSITION))
-async def member_left(event: ChatMemberUpdated, session: AsyncSession) -> None:
+async def member_left(event: ChatMemberUpdated, bot: Bot, session: AsyncSession) -> None:
     if await is_target_group(session, event.chat.id):
         await repo.mark_left(session, event.chat.id, event.new_chat_member.user.id)
+        if not event.new_chat_member.user.is_bot:
+            await track(bot, session, event.chat.id, event.new_chat_member.user.id, "leave")
 
 
 # --- Xizmat xabarlari (zaxira manba + o'chirish) ------------------------------

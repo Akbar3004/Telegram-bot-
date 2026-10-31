@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..config import get_settings
 from ..db import repo
 from ..utils import full_name
+from .admin.owner import claim_and_greet
 
 log = logging.getLogger(__name__)
 router = Router(name="user")
@@ -113,6 +114,9 @@ async def send_link(target: Message, bot: Bot, session: AsyncSession, user) -> N
 
 @router.message(CommandStart())
 async def start(message: Message, command: CommandObject, bot: Bot, session: AsyncSession) -> None:
+    # Egalikni topshirish havolasi yoki birinchi sozlash kodi bo'lsa — ega qilib tayinlanadi
+    if await claim_and_greet(message, bot, session, command.args):
+        return
     await repo.upsert_user(session, message.from_user, started=True)
     if command.args == "link":
         await send_link(message, bot, session, message.from_user)
