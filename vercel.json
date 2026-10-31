@@ -6,6 +6,8 @@
     }
   },
   "rewrites": [
+    { "source": "/api/webhook", "destination": "/api/index?route=webhook" },
+    { "source": "/api/setup", "destination": "/api/index?route=setup" },
     { "source": "/(.*)", "destination": "/api/index" }
   ]
 }
